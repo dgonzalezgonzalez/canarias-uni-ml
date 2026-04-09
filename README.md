@@ -13,8 +13,19 @@ The pipeline normalizes results into one CSV with a shared schema focused on job
 
 - `sce`: working via JWT extracted from the public Angular iframe and JSON API.
 - `turijobs`: implemented against public SSR data (`__NEXT_DATA__`), but may require HTTP/2-capable dependencies.
-- `indeed`: implemented with Playwright because direct HTTP requests are blocked by Cloudflare.
-- `infojobs`: implemented for the official API; requires developer credentials via environment variables.
+- `indeed`: working via embedded JSON extraction + ScrapingBee fallback for Cloudflare bypass.
+- `infojobs`: requires InfoJobs Developer API credentials OR ScrapingBee (JS rendering dependent).
+
+## Environment Variables
+
+```bash
+# Required for Indeed and InfoJobs
+export SCRAPINGBEE_API_KEY=...
+
+# Only for InfoJobs API (alternative to ScrapingBee)
+export INFOJOBS_CLIENT_ID=...
+export INFOJOBS_CLIENT_SECRET=...
+```
 
 ## Quickstart
 
@@ -32,15 +43,7 @@ Output CSV:
 data/processed/canarias_jobs.csv
 ```
 
-## Optional Environment Variables
-
-```bash
-export INFOJOBS_CLIENT_ID=...
-export INFOJOBS_CLIENT_SECRET=...
-export HEADLESS=true
-```
-
-Without InfoJobs credentials, the runner skips that source and records the failure in the console summary.
+Without the required environment variables, the runner skips that source and records the failure in the console summary.
 
 ## Project Layout
 
