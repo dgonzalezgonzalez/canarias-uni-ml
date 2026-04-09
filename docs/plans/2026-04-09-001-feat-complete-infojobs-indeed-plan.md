@@ -1,9 +1,10 @@
 ---
 title: Completar scrapers InfoJobs e Indeed
 type: feat
-status: active
+status: completed
 date: 2026-04-09
 origin: docs/brainstorms/2026-04-09-complete-infojobs-and-indeed-scrapers-requirements.md
+completed: 2026-04-09
 ---
 
 # Completar Scrapers InfoJobs e Indeed
@@ -208,6 +209,13 @@ El pipeline tiene 4 fuentes objetivo. SCE y Turijobs funcionan. InfoJobs tiene s
 - **CLI integration**: `--sources` flag puede especificar `infojobs` o `indeed`
 - **CSV output**: Nuevos registros se integran sin duplicados (por `external_id`)
 - **Error propagation**: Spiders fallan graceful, CLI continúa con otras fuentes
+
+## Status: Partial Completion
+
+- ✅ Indeed: IndeedApiSpider implemented with ScrapingBee support
+- ⚠️ InfoJobs: Spider updated with ScrapingBee fallback, but InfoJobs blocks JS rendering. Requires:
+  - Option A: InfoJobs Developer API credentials (register at developer.infojobs.net)
+  - Option B: Premium scraping service (Bright Data, Oxylabs) that renders JS fully
 
 ## Risks & Dependencies
 

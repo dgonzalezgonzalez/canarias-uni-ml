@@ -11,6 +11,8 @@ from .base import SpiderError, SpiderResult
 
 
 INFOJOBS_API = "https://api.infojobs.net/api/9/offer"
+INFOJOBS_LIST_URL_LAS_PALMAS = "https://www.infojobs.net/ofertas-trabajo?provinceIds=20"
+INFOJOBS_LIST_URL_TENERIFE = "https://www.infojobs.net/ofertas-trabajo?provinceIds=46"
 
 
 class InfoJobsSpider:
@@ -19,14 +21,120 @@ class InfoJobsSpider:
     def __init__(self) -> None:
         self.client_id = os.getenv("INFOJOBS_CLIENT_ID")
         self.client_secret = os.getenv("INFOJOBS_CLIENT_SECRET")
+        self.scrapingbee_key = os.getenv("SCRAPINGBEE_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
 
     def fetch(self, limit: int) -> SpiderResult:
-        if not self.client_id or not self.client_secret:
-            raise SpiderError("InfoJobs requires INFOJOBS_CLIENT_ID and INFOJOBS_CLIENT_SECRET")
+        if self.client_id and self.client_secret:
+            return self._fetch_via_api(limit)
+        elif self.scrapingbee_key:
+            return self._fetch_via_scrapingbee(limit)
+        else:
+            raise SpiderError(
+                "InfoJobs requires either INFOJOBS_CLIENT_ID/INFOJOBS_CLIENT_SECRET "
+                "or SCRAPINGBEE_API_KEY"
+            )
+
+    def _fetch_via_api(self, limit: int) -> SpiderResult:
         offers = self._fetch_list(limit)
         records = [self._fetch_detail(offer["id"]) for offer in offers[:limit]]
+        return SpiderResult(source=self.source, records=records)
+
+    def _fetch_via_scrapingbee(self, limit: int) -> SpiderResult:
+        import re
+        from bs4 import BeautifulSoup
+        
+        records: list[JobRecord] = []
+        
+        for province_url in [INFOJOBS_LIST_URL_LAS_PALMAS, INFOJOBS_LIST_URL_TENERIFE]:
+            if len(records) >= limit:
+                break
+            
+            sb_url = "https://app.scrapingbee.com/api/v1/"
+            sb_params = {
+                "api_key": self.scrapingbee_key,
+                "url": province_url,
+                "render_js": "true",
+                "country_code": "es",
+            }
+            
+            response = self.session.get(sb_url, params=sb_params, timeout=60)
+            if response.status_code != 200:
+                continue
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            for link in soup.find_all("a", href=re.compile(r"/ofertas-trabajo/[^/]+/[^.]+\.[a-z0-9]+", re.IGNORECASE)):
+                if len(records) >= limit:
+                    break
+                
+                href = link.get("href", "")
+                if not href.startswith("http"):
+                    href = f"https://www.infojobs.net{href}"
+                
+                offer_id = href.split("/")[-1].split(".")[-1]
+                
+                parent = link.find_parent("article") or link.find_parent("li") or link.find_parent("div")
+                title = clean_text(link.get_text())
+                if not title:
+                    continue
+                
+                company = None
+                salary = None
+                location = None
+                
+                if parent:
+                    company_elem = parent.find(class_=re.compile(r"company", re.IGNORECASE))
+                    if company_elem:
+                        company = clean_text(company_elem.get_text())
+                    
+                    salary_elem = parent.find(class_=re.compile(r"salary", re.IGNORECASE))
+                    if salary_elem:
+                        salary = clean_text(salary_elem.get_text())
+                    
+                    location_elem = parent.find(class_=re.compile(r"location", re.IGNORECASE))
+                    if location_elem:
+                        location = clean_text(location_elem.get_text())
+                
+                province = None
+                municipality = None
+                if location:
+                    if any(x in location.lower() for x in ["las palmas", "gran canaria", "lanzarote", "fuerteventura"]):
+                        province = "Las Palmas"
+                        municipality = location.split(",")[0].strip() if "," in location else location
+                    elif any(x in location.lower() for x in ["tenerife", "santa cruz", "la palma", "la gomera"]):
+                        province = "Santa Cruz de Tenerife"
+                        municipality = location.split(",")[0].strip() if "," in location else location
+                
+                records.append(JobRecord(
+                    source=self.source,
+                    external_id=offer_id,
+                    title=title,
+                    company=company,
+                    description=None,
+                    salary_text=salary,
+                    salary_min=None,
+                    salary_max=None,
+                    salary_currency="EUR" if salary else None,
+                    salary_period=None,
+                    publication_date=None,
+                    update_date=None,
+                    province=province,
+                    municipality=municipality,
+                    island=None,
+                    raw_location=location,
+                    contract_type=None,
+                    workday=None,
+                    schedule=None,
+                    vacancies=None,
+                    source_url=href,
+                    scraped_at=JobRecord.now(),
+                ))
+        
+        if not records:
+            raise SpiderError("InfoJobs returned no records via ScrapingBee")
+        
         return SpiderResult(source=self.source, records=records)
 
     def _auth_headers(self) -> dict[str, str]:
