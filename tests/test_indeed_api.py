@@ -77,7 +77,8 @@ class TestIndeedApiSpider:
             "salary": "40.000 €",
             "date": "Thu, 09 Apr 2026 12:00:00 GMT",
         }
-        record = spider._normalize_job(job)
+        detail = {}
+        record = spider._normalize_job(job, detail)
         assert record.source == "indeed"
         assert record.external_id == "test123"
         assert record.title == "Python Developer"
@@ -86,6 +87,25 @@ class TestIndeedApiSpider:
         assert record.salary_text == "40.000 €"
         assert record.publication_date == "2026-04-09"
 
+    def test_normalize_job_with_detail(self):
+        spider = IndeedApiSpider()
+        job = {
+            "jobkey": "test123",
+            "title": "Python Developer",
+            "companyName": "TestCo",
+            "formattedLocation": "Madrid, ES",
+            "date": "Thu, 09 Apr 2026 12:00:00 GMT",
+        }
+        detail = {
+            "description": "Full job description here",
+            "salary_text": "35.000 €",
+            "contract_type": "Indefinido",
+        }
+        record = spider._normalize_job(job, detail)
+        assert record.description == "Full job description here"
+        assert record.salary_text == "35.000 €"
+        assert record.contract_type == "Indefinido"
+
     def test_normalize_job_no_location(self):
         spider = IndeedApiSpider()
         job = {
@@ -93,7 +113,8 @@ class TestIndeedApiSpider:
             "title": "DevOps Engineer",
             "formattedLocation": "",
         }
-        record = spider._normalize_job(job)
+        detail = {}
+        record = spider._normalize_job(job, detail)
         assert record.municipality is None
         assert record.province == "Las Palmas"
 
@@ -105,7 +126,8 @@ class TestIndeedApiSpider:
             "companyName": "ArtCo",
             "formattedLocation": "Las Palmas de Gran Canaria, Las Palmas",
         }
-        record = spider._normalize_job(job)
+        detail = {}
+        record = spider._normalize_job(job, detail)
         assert record.municipality == "Las Palmas de Gran Canaria"
         assert record.province == "Las Palmas"
 
@@ -139,27 +161,30 @@ class TestIndeedApiSpider:
         jobs = spider._extract_jobs(html)
         assert jobs == []
 
-    def test_fetch_with_mock(self):
-        with patch.object(IndeedApiSpider, "_fetch_page") as mock_fetch:
-            mock_fetch.return_value = [
-                {
-                    "jobkey": "mock123",
-                    "title": "Mock Job",
-                    "companyName": "Mock Co",
-                    "formattedLocation": "Test City, ES",
-                }
-            ]
-            spider = IndeedApiSpider()
-            result = spider.fetch(10)
-            assert len(result.records) == 1
-            assert result.records[0].title == "Mock Job"
+    def test_extract_detail_valid_html(self):
+        spider = IndeedApiSpider()
+        html = """
+        <html><body>
+        <div id="jobDescriptionText">
+            We are looking for a Python Developer with experience in Django.
+            Requirements:
+            - Python 3.8+
+            - Django framework
+        </div>
+        <span class="salary">35.000 € - 45.000 €</span>
+        </body></html>
+        """
+        detail = spider._extract_detail(html)
+        assert detail["description"] is not None
+        assert "Python Developer" in detail["description"]
+        assert detail["salary_text"] is not None
+        assert "35.000" in detail["salary_text"]
 
-    def test_fetch_empty_raises(self):
-        with patch.object(IndeedApiSpider, "_fetch_page") as mock_fetch:
-            mock_fetch.return_value = []
-            spider = IndeedApiSpider()
-            with pytest.raises(Exception):
-                spider.fetch(10)
+    def test_extract_detail_no_description(self):
+        spider = IndeedApiSpider()
+        html = "<html><body><p>No job description here</p></body></html>"
+        detail = spider._extract_detail(html)
+        assert detail["description"] is None
 
     def test_scrapingbee_fallback(self):
         with patch.dict("os.environ", {"SCRAPINGBEE_API_KEY": "test-key"}):
