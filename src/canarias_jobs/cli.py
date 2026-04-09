@@ -4,6 +4,10 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from .models import JobRecord
 from .spiders import IndeedApiSpider, IndeedSpider, InfoJobsSpider, SCESpider, SpiderError, TurijobsSpider
 from .utils import write_csv

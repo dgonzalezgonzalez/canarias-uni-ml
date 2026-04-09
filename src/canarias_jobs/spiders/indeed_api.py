@@ -127,6 +127,7 @@ class IndeedApiSpider:
                 "url": url,
                 "render_js": "true",
                 "country_code": "es",
+                "block_resources": "false",
             }
             
             response = self.session.get(sb_url, params=sb_params, timeout=60)
@@ -152,6 +153,7 @@ class IndeedApiSpider:
                 "url": detail_url,
                 "render_js": "true",
                 "country_code": "es",
+                "block_resources": "false",
             }
             
             try:

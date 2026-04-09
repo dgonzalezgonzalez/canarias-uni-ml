@@ -25,8 +25,10 @@ ISLAND_TO_PROVINCE = {
 def clean_text(value: object) -> str | None:
     if value is None:
         return None
-    cleaned = re.sub(r"\s+", " ", str(value)).strip()
-    return cleaned or None
+    text = str(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
 
 
 def parse_date(value: str | None) -> str | None:

@@ -12,3 +12,4 @@ data/processed/*
 playwright-report/
 browser-auth/
 *.log
+.env
