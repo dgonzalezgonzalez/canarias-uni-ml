@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from .models import JobRecord
-from .spiders import IndeedSpider, InfoJobsSpider, SCESpider, SpiderError, TurijobsSpider
+from .spiders import IndeedApiSpider, IndeedSpider, InfoJobsSpider, SCESpider, SpiderError, TurijobsSpider
 from .utils import write_csv
 
 
@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
 
 def run() -> int:
     args = parse_args()
-    spiders = [SCESpider(), TurijobsSpider(), IndeedSpider(), InfoJobsSpider()]
+    spiders = [SCESpider(), TurijobsSpider(), IndeedApiSpider(), IndeedSpider(), InfoJobsSpider()]
     all_records: list[JobRecord] = []
     failures: list[str] = []
 
