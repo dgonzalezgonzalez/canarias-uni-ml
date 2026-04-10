@@ -11,7 +11,7 @@ load_dotenv()
 
 from .models import JobRecord
 from .scale import run_scaled
-from .spiders import IndeedApiSpider, IndeedSpider, InfoJobsSpider, JobspySpider, SCESpider, SpiderError, TurijobsSpider
+from .spiders import JobspySpider, SCESpider, SpiderError, TurijobsSpider
 from .utils import write_csv
 
 
@@ -63,6 +63,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--scale", action="store_true", help="Scale mode: maximum jobs in time limit")
     parser.add_argument("--time-limit", type=int, default=45, help="Time limit in minutes for scale mode")
+    parser.add_argument("--max-total", type=int, default=40_000, help="Maximum total records in scale mode")
+    parser.add_argument("--indeed-share", type=float, default=0.82, help="Indeed share in scale mode")
+    parser.add_argument("--sce-share", type=float, default=0.13, help="SCE share in scale mode")
+    parser.add_argument("--turijobs-share", type=float, default=0.05, help="Turijobs share in scale mode")
     parser.add_argument("--sce-only", action="store_true", help="Only scrape SCE (fast API)")
     parser.add_argument("--merge", action="store_true", help="Merge all existing CSV files in data/processed/")
     return parser.parse_args()
@@ -78,10 +82,14 @@ def run() -> int:
         return run_scaled(
             output_path=args.output,
             time_limit_minutes=args.time_limit,
+            max_total=args.max_total,
+            indeed_share=args.indeed_share,
+            sce_share=args.sce_share,
+            turijobs_share=args.turijobs_share,
             sce_only=args.sce_only,
         )
 
-    spiders = [SCESpider(), TurijobsSpider(), IndeedApiSpider(), IndeedSpider(), InfoJobsSpider(), JobspySpider()]
+    spiders = [SCESpider(), TurijobsSpider(), JobspySpider()]
     all_records: list[JobRecord] = []
     failures: list[str] = []
 
