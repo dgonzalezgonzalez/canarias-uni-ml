@@ -31,6 +31,9 @@ class JobRecord:
     workday: str | None = None
     schedule: str | None = None
     vacancies: str | None = None
+    target_degree_branches: str | None = None
+    target_degree_titles: str | None = None
+    degree_match_status: str | None = None
     source_url: str = ""
     scraped_at: str = ""
 

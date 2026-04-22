@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from ..io import write_csv_rows
+from .degree_mapping import annotate_job_degree_targets
 from .scale import _clean_record
 from .models import JobRecord
 from .scale import run_scaled
@@ -30,7 +31,8 @@ def run_jobs_merge(output_path: str) -> int:
             seen_urls.add(record.source_url)
             unique_records.append(record)
     unique_records.sort(key=lambda r: (r.source, r.publication_date or ""), reverse=True)
-    written = write_csv_rows(unique_records, output_path)
+    mapped_records = annotate_job_degree_targets(unique_records)
+    written = write_csv_rows(mapped_records, output_path)
     print(f"[done] wrote {written} merged rows to {output_path}")
     return 0
 
@@ -82,7 +84,8 @@ def run_jobs_pipeline(limit_per_source: int, output_path: str, max_total: int | 
     cleaned_records = [cleaned for record in all_records if (cleaned := _clean_record(record)) is not None]
     cleaned_records.sort(key=lambda record: (record.publication_date or "", record.source), reverse=True)
     output_records = _select_with_source_coverage(cleaned_records, max_total)
-    written = write_csv_rows(output_records, output_path)
+    mapped_records = annotate_job_degree_targets(output_records)
+    written = write_csv_rows(mapped_records, output_path)
     print(f"[done] wrote {written} rows to {output_path}")
     if failures:
         print("[failures]")
