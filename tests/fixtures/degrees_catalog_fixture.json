@@ -1,0 +1,37 @@
+{
+  "aneca": [
+    {
+      "id": "ANECA-001",
+      "university": "Universidad de La Laguna",
+      "title": "Grado en Ingeniería Informática",
+      "branch": "Ingeniería y Arquitectura",
+      "modality": "Presencial",
+      "credits": 240,
+      "status": "verificado",
+      "memory_url": "https://example.org/ull-informatica-memoria.pdf",
+      "source_url": "https://srv.aneca.es/ListadoTitulos/"
+    }
+  ],
+  "ruct": [
+    {
+      "id": "RUCT-001",
+      "university": "Universidad de Las Palmas de Gran Canaria",
+      "title": "Grado en Turismo",
+      "branch": "Ciencias Sociales y Jurídicas",
+      "modality": "Presencial",
+      "credits": 240,
+      "status": "activo",
+      "source_url": "https://www.ruct.es/"
+    },
+    {
+      "id": "RUCT-002",
+      "university": "Universidad de La Laguna",
+      "title": "Grado en Ingeniería Informática",
+      "branch": "Ingeniería y Arquitectura",
+      "modality": "Presencial",
+      "credits": 240,
+      "status": "activo",
+      "source_url": "https://www.ruct.es/"
+    }
+  ]
+}
