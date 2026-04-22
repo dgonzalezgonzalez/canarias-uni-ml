@@ -32,6 +32,7 @@ def write_degree_catalog(
     limit: int | None = None,
     max_pages: int | None = None,
     with_report_text: bool = False,
+    canary_only: bool = False,
     db_path: str | None = None,
 ) -> int:
     if fixture_path:
@@ -42,6 +43,7 @@ def write_degree_catalog(
             limit=limit,
             max_pages=max_pages,
             with_report_text=with_report_text,
+            canary_only=canary_only,
         ).records
     else:
         print("[skip] Degree catalog requires --fixture or --live-aneca")

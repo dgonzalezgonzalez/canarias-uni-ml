@@ -41,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     degrees_catalog.add_argument("--limit", type=int)
     degrees_catalog.add_argument("--max-pages", type=int)
     degrees_catalog.add_argument("--with-report-text", action="store_true")
+    degrees_catalog.add_argument("--canary-only", action="store_true")
 
     embed = subparsers.add_parser("embed", help="Embedding workflows")
     embed_sub = embed.add_subparsers(dest="embed_command", required=True)
@@ -85,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             max_pages=args.max_pages,
             with_report_text=args.with_report_text,
+            canary_only=args.canary_only,
             db_path=str(settings.degrees_db_output),
         )
 
