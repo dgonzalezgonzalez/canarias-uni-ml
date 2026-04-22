@@ -1,95 +1,80 @@
-# Canarias Jobs Scraper
+# canarias-uni-ml
 
-Python scraper for job postings in the Canary Islands from multiple sources:
-
-- Servicio Canario de Empleo (`sce`) - API directa pública (JWT + JSON)
-- Turijobs (`turijobs`) - sitemap + detalle de oferta
-- Indeed (`jobspy_indeed`) - scraping masivo vía `python-jobspy`
+Python pipeline for Canary Islands job postings plus Spanish university degree catalogs and embedding-ready text artifacts.
 
 ## Status
 
-| Source | Status | Notes |
+| Surface | Status | Notes |
 |--------|--------|-------|
 | SCE | ✅ Working | API JWT, número de ofertas variable |
 | Turijobs | ✅ Working | Sitemap + detail pages |
 | Indeed (JobSpy) | ✅ Working | Fuente principal para escalado |
-| InfoJobs | ⛔ Out of scope | Excluido del pipeline actual |
+| Geography / contract normalization | ✅ Working | Canonical + raw fields coexist |
+| Degree catalog | 🧪 Scaffolded | Fixture-driven ANECA/RUCT parser path |
+| Embeddings | 🧪 Scaffolded | OpenAI dry-run + manifest generation |
 
 ## Environment Variables
 
 ```bash
-# JobSpy (Indeed), opcional si quieres proxies
-export JOBSPY_PROXIES='["user:pass@host:port"]'
+export JOBSPY_PROXIES='["user:pass@host:port"]'   # optional
+export OPENAI_API_KEY='sk-...'                      # required for live embeddings
+export GROQ_API_KEY='...'                           # optional fallback experiments
 ```
+
+Important: ChatGPT subscription and OpenAI API billing are separate. API usage must be configured on `platform.openai.com`.
 
 ## Quickstart
 
 ```bash
-# Crear entorno
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python -m playwright install chromium
 
-# Modo normal (50 jobs por fuente)
-python -m src.canarias_jobs.cli --limit-per-source 50
+# Scrape jobs
+python -m src.canarias_uni_ml.cli jobs scrape --limit-per-source 50
 
-# Modo escala (objetivo hasta 40.000, con mayoría de Indeed)
-python -m src.canarias_jobs.cli --scale --time-limit 45 --max-total 40000
+# Scale jobs
+python -m src.canarias_uni_ml.cli jobs scale --time-limit 45 --max-total 40000
 
-# Solo SCE (rápido, ~184 jobs)
-python -m src.canarias_jobs.cli --sce-only
+# Build degree catalog from fixture
+python -m src.canarias_uni_ml.cli degrees catalog --fixture tests/fixtures/degrees_catalog_fixture.json
 
-# Fusionar CSVs existentes
-python -m src.canarias_jobs.cli --merge
+# Embedding dry run
+python -m src.canarias_uni_ml.cli embed build --input tests/fixtures/semantic_corpus.jsonl --dry-run
 ```
 
-Parámetros de distribución en `--scale`:
+Legacy job-only commands still route through compatibility wrapper in `src.canarias_jobs.cli`.
 
-- `--indeed-share` (default `0.82`)
-- `--sce-share` (default `0.13`)
-- `--turijobs-share` (default `0.05`)
+## Outputs
 
-Si SCE/Turijobs no alcanzan cuota, el remanente se rellena con Indeed hasta `--max-total`.
-
-## Output
-
-```text
-data/processed/canarias_jobs.csv
-```
+- `data/processed/canarias_jobs.csv`
+- `data/processed/degrees_catalog.csv`
+- `data/processed/embeddings_manifest.json`
 
 ## Project Layout
 
-```
-src/canarias_jobs/
-├── cli.py           # CLI principal
-├── scale.py         # Escalado con cuotas por fuente + limpieza/deduplicación
-├── models.py        # JobRecord schema
-├── utils.py         # Helpers de limpieza y parsing
-└── spiders/
-    ├── sce.py           # SCE API (JWT)
-    ├── turijobs.py      # Turijobs sitemap + detail
-    ├── jobspy_spider.py # JobSpy wrapper para Indeed
-    ├── indeed.py        # Indeed via Playwright (experimental)
-    └── indeed_api.py    # Indeed parser alternativo
+```text
+src/canarias_uni_ml/
+├── cli.py                # Multi-domain CLI
+├── config.py             # Settings and output paths
+├── io.py                 # CSV/JSONL writers
+├── jobs/                 # Job scraping pipeline
+├── degrees/              # Degree catalog scaffolding
+├── embeddings/           # Provider abstraction + manifests
+└── normalization/        # Canonical geography / contract type
 ```
 
-## Rate Limits
+## Job Data Contract
 
-- **Indeed**: fuente principal. El volumen final depende de bloqueos y latencia.
-- **Turijobs**: sitemap accesible, detalle más lento.
-- **SCE**: API directa y rápida.
+Canonical and raw values both persist:
 
-## Data Schema
+- `province`, `municipality`, `island`, `contract_type`: canonical values
+- `province_raw`, `municipality_raw`, `island_raw`, `contract_type_raw`: original scraped values
+- `raw_location`: original free-text location
 
-| Field | Type | Description |
-|-------|------|-------------|
-| source | str | Origen (p.ej. `jobspy_indeed`, `sce`, `turijobs`) |
-| external_id | str | ID externo del origen |
-| title | str | Título del puesto |
-| company | str | Nombre de la empresa |
-| description | str | Descripción completa |
-| salary_text | str | Rango salarial formateado |
-| province | str | Provincia (Las Palmas / Santa Cruz de Tenerife) |
-| island | str | Isla |
-| source_url | str | URL original |
+## Notes
+
+- Degree catalog currently uses deterministic fixtures while live ANECA/RUCT integration is hardened.
+- Embedding pipeline currently supports dry-run manifests and live OpenAI requests; Groq remains placeholder until embedding compatibility is verified.
+- Tests are sample-based by default because live sites and PDF sources are unstable.
