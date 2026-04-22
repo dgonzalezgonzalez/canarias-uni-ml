@@ -11,3 +11,9 @@ def test_unknown_contract_maps_other():
     result = normalize_contract_type("modalidad rara")
     assert result.contract_type == "other"
     assert result.confidence == "unresolved"
+
+
+def test_clean_text_nan_becomes_none():
+    from src.canarias_uni_ml.jobs.utils import clean_text
+    assert clean_text(float("nan")) is None
+    assert clean_text("nan") is None

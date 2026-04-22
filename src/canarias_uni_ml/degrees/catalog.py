@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ..io import write_csv_rows
+from ..io import write_csv_rows, write_sqlite_rows
 from .sources.aneca import fetch_aneca_degree_catalog, parse_aneca_records
 from .sources.ruct import parse_ruct_records
 
@@ -32,6 +32,7 @@ def write_degree_catalog(
     limit: int | None = None,
     max_pages: int | None = None,
     with_report_text: bool = False,
+    db_path: str | None = None,
 ) -> int:
     if fixture_path:
         payload = load_degree_catalog_from_fixture(fixture_path)
@@ -45,6 +46,11 @@ def write_degree_catalog(
     else:
         print("[skip] Degree catalog requires --fixture or --live-aneca")
         return 1
-    written = write_csv_rows([record.to_row() for record in records], output_path)
-    print(f"[done] wrote {written} degree catalog rows to {output_path}")
+    rows = [record.to_row() for record in records]
+    written = write_csv_rows(rows, output_path)
+    if db_path:
+        write_sqlite_rows(rows, db_path, "degrees_catalog")
+        print(f"[done] wrote {written} degree catalog rows to {output_path} and {db_path}")
+    else:
+        print(f"[done] wrote {written} degree catalog rows to {output_path}")
     return 0

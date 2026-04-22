@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_sub = jobs.add_subparsers(dest="jobs_command", required=True)
     jobs_scrape = jobs_sub.add_parser("scrape", help="Scrape jobs")
     jobs_scrape.add_argument("--limit-per-source", type=int, default=50)
+    jobs_scrape.add_argument("--max-total", type=int)
     jobs_scrape.add_argument("--output")
 
     jobs_scale = jobs_sub.add_parser("scale", help="Scaled scraping run")
@@ -63,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             return run_jobs_pipeline(
                 limit_per_source=args.limit_per_source,
                 output_path=args.output or str(settings.jobs_output),
+                max_total=args.max_total,
             )
         if args.jobs_command == "scale":
             return run_jobs_scale(
@@ -83,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             max_pages=args.max_pages,
             with_report_text=args.with_report_text,
+            db_path=str(settings.degrees_db_output),
         )
 
     if args.domain == "embed" and args.embed_command == "build":

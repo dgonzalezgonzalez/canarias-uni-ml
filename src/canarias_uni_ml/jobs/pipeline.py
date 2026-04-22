@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from ..io import write_csv_rows
+from .scale import _clean_record
 from .models import JobRecord
 from .scale import run_scaled
 from .spiders import JobspySpider, SCESpider, SpiderError, TurijobsSpider
@@ -34,7 +35,31 @@ def run_jobs_merge(output_path: str) -> int:
     return 0
 
 
-def run_jobs_pipeline(limit_per_source: int, output_path: str) -> int:
+def _select_with_source_coverage(records: list[JobRecord], max_total: int | None) -> list[JobRecord]:
+    if max_total is None or len(records) <= max_total:
+        return records
+    grouped: dict[str, list[JobRecord]] = {}
+    for record in records:
+        grouped.setdefault(record.source, []).append(record)
+    selected: list[JobRecord] = []
+    seen_urls: set[str] = set()
+    for source in sorted(grouped):
+        record = grouped[source][0]
+        if record.source_url in seen_urls:
+            continue
+        selected.append(record)
+        seen_urls.add(record.source_url)
+    for record in records:
+        if len(selected) >= max_total:
+            break
+        if record.source_url in seen_urls:
+            continue
+        selected.append(record)
+        seen_urls.add(record.source_url)
+    return selected[:max_total]
+
+
+def run_jobs_pipeline(limit_per_source: int, output_path: str, max_total: int | None = None) -> int:
     spiders = [SCESpider(), TurijobsSpider(), JobspySpider()]
     all_records: list[JobRecord] = []
     failures: list[str] = []
@@ -54,8 +79,10 @@ def run_jobs_pipeline(limit_per_source: int, output_path: str) -> int:
                 failures.append(f"{source}: {exc}")
                 print(f"[error] {source}: {exc}")
 
-    all_records.sort(key=lambda record: (record.source, record.publication_date or ""), reverse=True)
-    written = write_csv_rows(all_records, output_path)
+    cleaned_records = [cleaned for record in all_records if (cleaned := _clean_record(record)) is not None]
+    cleaned_records.sort(key=lambda record: (record.publication_date or "", record.source), reverse=True)
+    output_records = _select_with_source_coverage(cleaned_records, max_total)
+    written = write_csv_rows(output_records, output_path)
     print(f"[done] wrote {written} rows to {output_path}")
     if failures:
         print("[failures]")

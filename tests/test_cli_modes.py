@@ -3,10 +3,11 @@ from src.canarias_uni_ml.cli import build_parser
 
 def test_cli_jobs_scrape_mode():
     parser = build_parser()
-    args = parser.parse_args(["jobs", "scrape", "--limit-per-source", "10"])
+    args = parser.parse_args(["jobs", "scrape", "--limit-per-source", "10", "--max-total", "10"])
     assert args.domain == "jobs"
     assert args.jobs_command == "scrape"
     assert args.limit_per_source == 10
+    assert args.max_total == 10
 
 
 def test_cli_embed_mode():
