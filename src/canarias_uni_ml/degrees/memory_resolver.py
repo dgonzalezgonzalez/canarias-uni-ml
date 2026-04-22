@@ -12,7 +12,7 @@ from .sources.universities import (
 
 
 def resolve_missing_memory(record: DegreeCatalogRecord) -> MemoryResolution:
-    if record.memory_url:
+    if record.memory_url and not _looks_like_aneca_report(record.memory_url):
         return MemoryResolution(
             memory_url=record.memory_url,
             source=record.memory_resolution_source or "aneca",
@@ -42,3 +42,7 @@ def _resolver_for_university(university_id: str | None):
     if university_id == "ufpc":
         return UFPCMemoryResolver()
     return None
+
+
+def _looks_like_aneca_report(urls: str) -> bool:
+    return "/informes/" in urls.lower() or "informefinal" in urls.lower()

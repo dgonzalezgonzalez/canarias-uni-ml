@@ -171,6 +171,7 @@ def fetch_aneca_degree_catalog(
     limit: int | None = None,
     max_pages: int | None = None,
     with_report_text: bool = False,
+    use_report_fallback_for_description: bool = False,
     canary_only: bool = False,
     resolve_university_memory: bool = False,
     verify_ssl: bool = False,
@@ -193,9 +194,15 @@ def fetch_aneca_degree_catalog(
         matched_hint = match_canary_university(university_hint)
         if canary_only and not matched_hint:
             continue
-        detail_response = session.get(row["source_url"], timeout=timeout, verify=verify_ssl)
-        detail_response.raise_for_status()
-        detail = parse_aneca_detail_page(detail_response.text, row["source_url"] or "")
+        detail: dict[str, str | None] = {}
+        detail_error: str | None = None
+        try:
+            detail_response = session.get(row["source_url"], timeout=timeout, verify=verify_ssl)
+            detail_response.raise_for_status()
+            detail = parse_aneca_detail_page(detail_response.text, row["source_url"] or "")
+        except requests.RequestException as exc:
+            detail_error = f"aneca_detail_error:{type(exc).__name__}"
+
         university = detail.get("university") or university_hint
         matched = match_canary_university(university) or matched_hint
         if canary_only and not matched:
@@ -215,33 +222,45 @@ def fetch_aneca_degree_catalog(
             language=detail.get("language") or row.get("language"),
             credits=detail.get("credits"),
             status=detail.get("status"),
-            memory_url=detail.get("memory_url") or detail.get("report_urls"),
+            memory_url=detail.get("memory_url"),
             report_url=detail.get("report_url"),
             source_url=row["source_url"],
-            memory_resolution_source="aneca_detail" if detail.get("memory_url") or detail.get("report_urls") else None,
-            memory_resolution_status="resolved" if detail.get("memory_url") or detail.get("report_urls") else "unresolved",
+            memory_resolution_source="aneca_detail" if detail.get("memory_url") else None,
+            memory_resolution_status="resolved" if detail.get("memory_url") else "unresolved",
+            memory_resolution_error=detail_error,
             scraped_at=DegreeCatalogRecord.now(),
         )
 
-        if resolve_university_memory and not record.memory_url:
+        if resolve_university_memory:
             resolved = resolve_missing_memory(record)
-            record.memory_url = resolved.memory_url
-            record.memory_resolution_source = resolved.source
-            record.memory_resolution_status = resolved.status
-            record.memory_resolution_error = resolved.error
+            if resolved.memory_url:
+                record.memory_url = resolved.memory_url
+                record.memory_resolution_source = resolved.source
+                record.memory_resolution_status = resolved.status
+                record.memory_resolution_error = resolved.error
+            elif not record.memory_url:
+                record.memory_resolution_source = resolved.source
+                record.memory_resolution_status = resolved.status
+                record.memory_resolution_error = resolved.error
 
         description = None
         description_source = None
         if with_report_text:
-            candidate_urls = _candidate_report_urls(record)
+            candidate_urls = _candidate_description_urls(
+                record,
+                allow_report_fallback=use_report_fallback_for_description,
+            )
             for candidate_url in candidate_urls:
-                description = fetch_and_extract_report_description(
-                    candidate_url,
-                    timeout=timeout,
-                    verify_ssl=verify_ssl,
-                )
+                try:
+                    description = fetch_and_extract_report_description(
+                        candidate_url,
+                        timeout=timeout,
+                        verify_ssl=verify_ssl,
+                    )
+                except requests.RequestException:
+                    description = None
                 if description:
-                    description_source = "aneca_report_pdf"
+                    description_source = _description_source_label(record, candidate_url)
                     break
         record.description = description
         record.description_source = description_source
@@ -296,13 +315,20 @@ def _fetch_search_rows(
     return records
 
 
-def _candidate_report_urls(record: DegreeCatalogRecord) -> list[str]:
+def _candidate_description_urls(record: DegreeCatalogRecord, *, allow_report_fallback: bool) -> list[str]:
     urls: list[str] = []
-    if record.report_url:
-        urls.append(record.report_url)
     if record.memory_url:
         urls.extend(url for url in record.memory_url.split("|") if url and url not in urls)
+    if allow_report_fallback and record.report_url:
+        urls.append(record.report_url)
     return urls
+
+
+def _description_source_label(record: DegreeCatalogRecord, used_url: str) -> str:
+    memory_urls = {x for x in (record.memory_url or "").split("|") if x}
+    if used_url in memory_urls:
+        return "university_memory_pdf"
+    return "aneca_report_pdf"
 
 
 def _extract_memory_urls(soup: BeautifulSoup) -> list[str]:
