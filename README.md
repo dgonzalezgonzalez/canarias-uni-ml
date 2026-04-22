@@ -34,13 +34,19 @@ python -m playwright install chromium
 # Scrape jobs
 python -m src.canarias_uni_ml.cli jobs scrape --limit-per-source 50
 
+# Run nightly daemon once (foreground, exits after one cycle)
+python -m src.canarias_uni_ml.cli jobs daemon --run-once --window-start 22:00 --window-end 07:30
+
+# Run nightly daemon continuously (default window 22:00-07:30 Europe/Madrid)
+python -m src.canarias_uni_ml.cli jobs daemon --cooldown-minutes 10
+
 # Scale jobs
 python -m src.canarias_uni_ml.cli jobs scale --time-limit 45 --max-total 40000
 
 # Build degree catalog from fixture
 python -m src.canarias_uni_ml.cli degrees catalog --fixture tests/fixtures/degrees_catalog_fixture.json
 
-# Live ANECA catalog (grado/master/doctorado) with extracted report text
+# Live ANECA catalog (grado/master/doctorado) with university-memory resolution
 python -m src.canarias_uni_ml.cli degrees catalog --live-aneca --cycles grado,master,doctorado --limit 20 --with-report-text --resolve-university-memory
 
 # Embedding dry run
@@ -52,6 +58,7 @@ Legacy job-only commands still route through compatibility wrapper in `src.canar
 ## Outputs
 
 - `data/processed/canarias_jobs.csv`
+- `data/processed/canarias_jobs.db`
 - `data/processed/degrees_catalog.csv`
 - `data/processed/embeddings_manifest.json`
 
@@ -75,6 +82,29 @@ Canonical and raw values both persist:
 - `province`, `municipality`, `island`, `contract_type`: canonical values
 - `province_raw`, `municipality_raw`, `island_raw`, `contract_type_raw`: original scraped values
 - `raw_location`: original free-text location
+
+## Nightly Daemon
+
+- Command: `python -m src.canarias_uni_ml.cli jobs daemon`
+- Default schedule: `22:00` to `07:30` (`Europe/Madrid`)
+- Behavior:
+  - process stays alive and only scrapes inside configured window
+  - writes canonical state to SQLite (`data/processed/canarias_jobs.db`)
+  - exports snapshot CSV after each cycle (`data/processed/canarias_jobs.csv`)
+  - avoids duplicates across nights
+  - on repeated jobs, updates row only when payload changed; unchanged rows are skipped
+
+Key options:
+
+- `--window-start HH:MM`
+- `--window-end HH:MM`
+- `--timezone Europe/Madrid`
+- `--cooldown-minutes 10`
+- `--run-once` (for preflight checks)
+- `--db-path data/processed/canarias_jobs.db`
+- `--lock-path data/processed/canarias_jobs.lock`
+
+Production deployment guide: `docs/operations/remote-nightly-deploy.md`
 
 ## Notes
 

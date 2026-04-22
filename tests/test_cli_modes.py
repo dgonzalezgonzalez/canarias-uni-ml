@@ -41,3 +41,35 @@ def test_cli_degrees_live_aneca_mode():
     assert args.limit == 5
     assert args.with_report_text is True
     assert args.resolve_university_memory is True
+
+
+def test_cli_jobs_daemon_mode():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "jobs",
+            "daemon",
+            "--window-start",
+            "22:00",
+            "--window-end",
+            "07:30",
+            "--timezone",
+            "Europe/Madrid",
+            "--cooldown-minutes",
+            "5",
+            "--run-once",
+        ]
+    )
+    assert args.domain == "jobs"
+    assert args.jobs_command == "daemon"
+    assert args.window_start == "22:00"
+    assert args.window_end == "07:30"
+    assert args.timezone == "Europe/Madrid"
+    assert args.cooldown_minutes == 5
+    assert args.run_once is True
+
+
+def test_cli_degrees_description_alias_sets_same_flag():
+    parser = build_parser()
+    args = parser.parse_args(["degrees", "catalog", "--with-description-text"])
+    assert args.with_report_text is True

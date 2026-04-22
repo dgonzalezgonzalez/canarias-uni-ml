@@ -1,0 +1,18 @@
+[Unit]
+Description=Canarias Jobs Nightly Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/canarias-uni-ml
+EnvironmentFile=/opt/canarias-uni-ml/.env
+ExecStart=/opt/canarias-uni-ml/.venv/bin/python -m src.canarias_uni_ml.cli jobs daemon --window-start 22:00 --window-end 07:30 --timezone Europe/Madrid --cooldown-minutes 10
+Restart=always
+RestartSec=15
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

@@ -3,15 +3,17 @@ from __future__ import annotations
 import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Iterable
 
-from ..io import write_csv_rows
 from .degree_mapping import annotate_job_degree_targets
 from .scale import _clean_record
 from .models import JobRecord
 from .scale import run_scaled
 from .spiders import JobspySpider, SCESpider, SpiderError, TurijobsSpider
+from .storage import JobsRepository
 
 PROCESSED_DIR = Path("data/processed")
+DEFAULT_JOBS_DB = Path("data/processed/canarias_jobs.db")
 
 
 def run_jobs_merge(output_path: str) -> int:
@@ -61,11 +63,9 @@ def _select_with_source_coverage(records: list[JobRecord], max_total: int | None
     return selected[:max_total]
 
 
-def run_jobs_pipeline(limit_per_source: int, output_path: str, max_total: int | None = None) -> int:
-    spiders = [SCESpider(), TurijobsSpider(), JobspySpider()]
+def _collect_records(spiders: Iterable[object], limit_per_source: int) -> tuple[list[JobRecord], list[str]]:
     all_records: list[JobRecord] = []
     failures: list[str] = []
-
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(spider.fetch, limit_per_source): spider.source for spider in spiders}
         for future in as_completed(futures):
@@ -80,13 +80,35 @@ def run_jobs_pipeline(limit_per_source: int, output_path: str, max_total: int | 
             except Exception as exc:  # pragma: no cover
                 failures.append(f"{source}: {exc}")
                 print(f"[error] {source}: {exc}")
+    return all_records, failures
+
+
+def run_jobs_pipeline(
+    limit_per_source: int,
+    output_path: str,
+    max_total: int | None = None,
+    db_path: str | None = None,
+    spiders: list[object] | None = None,
+) -> int:
+    spiders = spiders or [SCESpider(), TurijobsSpider(), JobspySpider()]
+    all_records, failures = _collect_records(spiders, limit_per_source)
 
     cleaned_records = [cleaned for record in all_records if (cleaned := _clean_record(record)) is not None]
     cleaned_records.sort(key=lambda record: (record.publication_date or "", record.source), reverse=True)
     output_records = _select_with_source_coverage(cleaned_records, max_total)
     mapped_records = annotate_job_degree_targets(output_records)
-    written = write_csv_rows(mapped_records, output_path)
-    print(f"[done] wrote {written} rows to {output_path}")
+    repo = JobsRepository(db_path or DEFAULT_JOBS_DB)
+    stats = repo.upsert_records(mapped_records)
+    written = repo.export_csv(output_path)
+    print(
+        "[done] wrote {written} rows to {output} (inserted={inserted}, updated={updated}, unchanged={unchanged})".format(
+            written=written,
+            output=output_path,
+            inserted=stats.inserted,
+            updated=stats.updated,
+            unchanged=stats.unchanged,
+        )
+    )
     if failures:
         print("[failures]")
         for failure in failures:

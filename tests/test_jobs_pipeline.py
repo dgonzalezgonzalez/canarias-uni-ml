@@ -1,12 +1,13 @@
 from src.canarias_uni_ml.jobs.models import JobRecord
-from src.canarias_uni_ml.jobs.pipeline import _select_with_source_coverage
+from src.canarias_uni_ml.jobs.pipeline import _select_with_source_coverage, run_jobs_pipeline
+from src.canarias_uni_ml.jobs.spiders.base import SpiderError, SpiderResult
 
 
-def _record(source: str, idx: int) -> JobRecord:
+def _record(source: str, idx: int, *, title: str | None = None) -> JobRecord:
     return JobRecord(
         source=source,
         external_id=str(idx),
-        title=f"title-{idx}",
+        title=title or f"title-{idx}",
         company=None,
         description=None,
         salary_text=None,
@@ -33,3 +34,61 @@ def test_select_with_source_coverage_keeps_at_least_one_per_source():
     selected = _select_with_source_coverage(records, 4)
     assert len(selected) == 4
     assert {record.source for record in selected} == {"jobspy_indeed", "sce", "turijobs"}
+
+
+class StaticSpider:
+    def __init__(self, source: str, records: list[JobRecord]) -> None:
+        self.source = source
+        self._records = records
+
+    def fetch(self, limit: int) -> SpiderResult:
+        return SpiderResult(source=self.source, records=self._records[:limit])
+
+
+class FailingSpider:
+    def __init__(self, source: str) -> None:
+        self.source = source
+
+    def fetch(self, limit: int) -> SpiderResult:  # pragma: no cover - expected to raise
+        raise SpiderError("boom")
+
+
+def test_run_jobs_pipeline_upserts_and_updates(tmp_path):
+    output = tmp_path / "jobs.csv"
+    db_path = tmp_path / "jobs.db"
+
+    first_run = run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("sce", [_record("sce", 1, title="title-v1")])],
+    )
+    assert first_run == 0
+
+    second_run = run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("sce", [_record("sce", 1, title="title-v2")])],
+    )
+    assert second_run == 0
+
+    rows = output.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 2
+    assert "title-v2" in rows[1]
+
+
+def test_run_jobs_pipeline_continues_when_one_source_fails(tmp_path):
+    output = tmp_path / "jobs.csv"
+    db_path = tmp_path / "jobs.db"
+    exit_code = run_jobs_pipeline(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[
+            FailingSpider("turijobs"),
+            StaticSpider("sce", [_record("sce", 1)]),
+        ],
+    )
+    assert exit_code == 0
+    assert output.exists()

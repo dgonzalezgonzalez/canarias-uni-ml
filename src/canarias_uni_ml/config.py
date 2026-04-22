@@ -11,6 +11,8 @@ class Settings:
     processed_dir: Path = Path("data/processed")
     raw_dir: Path = Path("data/raw")
     jobs_output: Path = Path("data/processed/canarias_jobs.csv")
+    jobs_db_output: Path = Path("data/processed/canarias_jobs.db")
+    jobs_daemon_lock: Path = Path("data/processed/canarias_jobs.lock")
     degrees_catalog_output: Path = Path("data/processed/degrees_catalog.csv")
     degrees_db_output: Path = Path("data/processed/degrees_catalog.db")
     degrees_descriptions_output: Path = Path("data/processed/degrees_descriptions.csv")
