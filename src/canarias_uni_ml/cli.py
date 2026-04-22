@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     degrees_catalog = degrees_sub.add_parser("catalog", help="Build degree catalog from fixtures or public sources")
     degrees_catalog.add_argument("--output")
     degrees_catalog.add_argument("--fixture")
+    degrees_catalog.add_argument("--live-aneca", action="store_true")
+    degrees_catalog.add_argument("--limit", type=int)
+    degrees_catalog.add_argument("--max-pages", type=int)
+    degrees_catalog.add_argument("--with-report-text", action="store_true")
 
     embed = subparsers.add_parser("embed", help="Embedding workflows")
     embed_sub = embed.add_subparsers(dest="embed_command", required=True)
@@ -75,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
         return write_degree_catalog(
             output_path=args.output or str(settings.degrees_catalog_output),
             fixture_path=args.fixture,
+            live_aneca=args.live_aneca,
+            limit=args.limit,
+            max_pages=args.max_pages,
+            with_report_text=args.with_report_text,
         )
 
     if args.domain == "embed" and args.embed_command == "build":

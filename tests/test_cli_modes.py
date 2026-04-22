@@ -16,3 +16,13 @@ def test_cli_embed_mode():
     assert args.embed_command == "build"
     assert args.provider == "groq"
     assert args.dry_run is True
+
+
+def test_cli_degrees_live_aneca_mode():
+    parser = build_parser()
+    args = parser.parse_args(["degrees", "catalog", "--live-aneca", "--limit", "5", "--with-report-text"])
+    assert args.domain == "degrees"
+    assert args.degrees_command == "catalog"
+    assert args.live_aneca is True
+    assert args.limit == 5
+    assert args.with_report_text is True
