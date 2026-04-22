@@ -26,8 +26,12 @@ def clean_text(value: object) -> str | None:
     if value is None:
         return None
     text = str(value)
+    if text.lower() in {"nan", "none", "null", "nat"}:
+        return None
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
+    if text.lower() in {"nan", "none", "null", "nat"}:
+        return None
     return text or None
 
 

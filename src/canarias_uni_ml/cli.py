@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_sub = jobs.add_subparsers(dest="jobs_command", required=True)
     jobs_scrape = jobs_sub.add_parser("scrape", help="Scrape jobs")
     jobs_scrape.add_argument("--limit-per-source", type=int, default=50)
+    jobs_scrape.add_argument("--max-total", type=int)
     jobs_scrape.add_argument("--output")
 
     jobs_scale = jobs_sub.add_parser("scale", help="Scaled scraping run")
@@ -36,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
     degrees_catalog = degrees_sub.add_parser("catalog", help="Build degree catalog from fixtures or public sources")
     degrees_catalog.add_argument("--output")
     degrees_catalog.add_argument("--fixture")
+    degrees_catalog.add_argument("--live-aneca", action="store_true")
+    degrees_catalog.add_argument("--limit", type=int)
+    degrees_catalog.add_argument("--max-pages", type=int)
+    degrees_catalog.add_argument("--with-report-text", action="store_true")
 
     embed = subparsers.add_parser("embed", help="Embedding workflows")
     embed_sub = embed.add_subparsers(dest="embed_command", required=True)
@@ -59,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             return run_jobs_pipeline(
                 limit_per_source=args.limit_per_source,
                 output_path=args.output or str(settings.jobs_output),
+                max_total=args.max_total,
             )
         if args.jobs_command == "scale":
             return run_jobs_scale(
@@ -75,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
         return write_degree_catalog(
             output_path=args.output or str(settings.degrees_catalog_output),
             fixture_path=args.fixture,
+            live_aneca=args.live_aneca,
+            limit=args.limit,
+            max_pages=args.max_pages,
+            with_report_text=args.with_report_text,
+            db_path=str(settings.degrees_db_output),
         )
 
     if args.domain == "embed" and args.embed_command == "build":

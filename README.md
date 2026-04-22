@@ -40,6 +40,9 @@ python -m src.canarias_uni_ml.cli jobs scale --time-limit 45 --max-total 40000
 # Build degree catalog from fixture
 python -m src.canarias_uni_ml.cli degrees catalog --fixture tests/fixtures/degrees_catalog_fixture.json
 
+# Live ANECA grado catalog with extracted report text
+python -m src.canarias_uni_ml.cli degrees catalog --live-aneca --limit 20 --with-report-text
+
 # Embedding dry run
 python -m src.canarias_uni_ml.cli embed build --input tests/fixtures/semantic_corpus.jsonl --dry-run
 ```
@@ -75,6 +78,6 @@ Canonical and raw values both persist:
 
 ## Notes
 
-- Degree catalog currently uses deterministic fixtures while live ANECA/RUCT integration is hardened.
+- Degree catalog supports live ANECA grado ingestion; RUCT remains fixture-backed until its public contract is hardened.
 - Embedding pipeline currently supports dry-run manifests and live OpenAI requests; Groq remains placeholder until embedding compatibility is verified.
 - Tests are sample-based by default because live sites and PDF sources are unstable.
