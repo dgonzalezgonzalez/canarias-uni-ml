@@ -38,9 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
     degrees_catalog.add_argument("--output")
     degrees_catalog.add_argument("--fixture")
     degrees_catalog.add_argument("--live-aneca", action="store_true")
+    degrees_catalog.add_argument(
+        "--cycles",
+        default="grado,master,doctorado",
+        help="Comma-separated title cycles (grado,master,doctorado)",
+    )
     degrees_catalog.add_argument("--limit", type=int)
     degrees_catalog.add_argument("--max-pages", type=int)
     degrees_catalog.add_argument("--with-report-text", action="store_true")
+    degrees_catalog.add_argument("--canary-only", action="store_true")
+    degrees_catalog.add_argument("--resolve-university-memory", action="store_true")
 
     embed = subparsers.add_parser("embed", help="Embedding workflows")
     embed_sub = embed.add_subparsers(dest="embed_command", required=True)
@@ -78,13 +85,17 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     if args.domain == "degrees" and args.degrees_command == "catalog":
+        cycles = tuple(x.strip().lower() for x in args.cycles.split(",") if x.strip())
         return write_degree_catalog(
             output_path=args.output or str(settings.degrees_catalog_output),
             fixture_path=args.fixture,
             live_aneca=args.live_aneca,
+            cycles=cycles,
             limit=args.limit,
             max_pages=args.max_pages,
             with_report_text=args.with_report_text,
+            canary_only=args.canary_only,
+            resolve_university_memory=args.resolve_university_memory,
             db_path=str(settings.degrees_db_output),
         )
 

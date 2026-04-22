@@ -21,9 +21,23 @@ def test_cli_embed_mode():
 
 def test_cli_degrees_live_aneca_mode():
     parser = build_parser()
-    args = parser.parse_args(["degrees", "catalog", "--live-aneca", "--limit", "5", "--with-report-text"])
+    args = parser.parse_args(
+        [
+            "degrees",
+            "catalog",
+            "--live-aneca",
+            "--cycles",
+            "grado,master,doctorado",
+            "--limit",
+            "5",
+            "--with-report-text",
+            "--resolve-university-memory",
+        ]
+    )
     assert args.domain == "degrees"
     assert args.degrees_command == "catalog"
     assert args.live_aneca is True
+    assert args.cycles == "grado,master,doctorado"
     assert args.limit == 5
     assert args.with_report_text is True
+    assert args.resolve_university_memory is True

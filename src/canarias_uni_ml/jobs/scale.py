@@ -4,6 +4,7 @@ import random
 import time
 
 from ..normalization import normalize_contract_type, normalize_geography
+from .degree_mapping import annotate_job_degree_targets
 from .models import JobRecord
 from .spiders.base import SpiderError, SpiderResult
 from .spiders.jobspy_spider import JobspySpider
@@ -321,10 +322,11 @@ def run_scaled(
 
     total_elapsed = time.time() - start_total
     cleaned_records = _clean_and_dedupe(all_records, max_total=max_total)
-    written = write_csv(cleaned_records, output_path)
+    mapped_records = annotate_job_degree_targets(cleaned_records)
+    written = write_csv(mapped_records, output_path)
 
     source_counts: dict[str, int] = {}
-    for record in cleaned_records:
+    for record in mapped_records:
         source_root = (record.source or "").split("_")[0]
         source_counts[source_root] = source_counts.get(source_root, 0) + 1
 
