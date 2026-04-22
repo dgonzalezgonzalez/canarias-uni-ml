@@ -40,8 +40,8 @@ python -m src.canarias_uni_ml.cli jobs scale --time-limit 45 --max-total 40000
 # Build degree catalog from fixture
 python -m src.canarias_uni_ml.cli degrees catalog --fixture tests/fixtures/degrees_catalog_fixture.json
 
-# Live ANECA grado catalog with extracted report text
-python -m src.canarias_uni_ml.cli degrees catalog --live-aneca --limit 20 --with-report-text
+# Live ANECA catalog (grado/master/doctorado) with extracted report text
+python -m src.canarias_uni_ml.cli degrees catalog --live-aneca --cycles grado,master,doctorado --limit 20 --with-report-text --resolve-university-memory
 
 # Embedding dry run
 python -m src.canarias_uni_ml.cli embed build --input tests/fixtures/semantic_corpus.jsonl --dry-run

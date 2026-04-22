@@ -11,6 +11,9 @@ class DegreeCatalogRecord:
     source_id: str
     university: str
     title: str
+    title_type: str | None = None
+    university_id: str | None = None
+    university_type: str | None = None
     branch: str | None = None
     center: str | None = None
     modality: str | None = None
@@ -20,6 +23,9 @@ class DegreeCatalogRecord:
     memory_url: str | None = None
     report_url: str | None = None
     source_url: str | None = None
+    memory_resolution_source: str | None = None
+    memory_resolution_status: str | None = None
+    memory_resolution_error: str | None = None
     description: str | None = None
     description_source: str | None = None
     scraped_at: str = ""

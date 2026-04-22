@@ -3,6 +3,7 @@ from pathlib import Path
 from src.canarias_uni_ml.degrees.catalog import build_degree_catalog, load_degree_catalog_from_fixture
 from src.canarias_uni_ml.degrees.report_extract import build_description_from_report_text
 from src.canarias_uni_ml.degrees.sources.aneca import parse_aneca_detail_page, parse_aneca_search_page
+from src.canarias_uni_ml.degrees.university_registry import match_canary_university
 
 
 def test_degree_catalog_dedupes_same_degree():
@@ -36,6 +37,7 @@ def test_parse_aneca_search_page_extracts_grado_rows():
     rows = parse_aneca_search_page(html)
     assert rows == [{
         "title": "Grado en Matemáticas",
+        "title_type": "grado",
         "university": "Universidad de Salamanca",
         "branch": "Ciencias",
         "language": "Español",
@@ -87,3 +89,24 @@ def test_build_description_from_report_text_extracts_motivacion():
     assert description is not None
     assert "Descripción del Título" in description
     assert "RECOMENDACIONES" not in description
+
+
+def test_parse_aneca_search_page_keeps_cycle_from_argument():
+    html = Path("tests/fixtures/aneca_search_master_sample.html").read_text(encoding="utf-8")
+    rows = parse_aneca_search_page(html, title_type="master")
+    assert len(rows) == 1
+    assert rows[0]["title_type"] == "master"
+    assert rows[0]["title"] == "Master en Ciberseguridad"
+
+
+def test_parse_aneca_search_page_infers_doctorado_type():
+    html = Path("tests/fixtures/aneca_search_doctorado_sample.html").read_text(encoding="utf-8")
+    rows = parse_aneca_search_page(html)
+    assert len(rows) == 1
+    assert rows[0]["title_type"] == "doctorado"
+
+
+def test_match_canary_university_accepts_alias():
+    entry = match_canary_university("Universidad del Atlantico Medio")
+    assert entry is not None
+    assert entry.university_id == "uam"

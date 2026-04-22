@@ -13,6 +13,9 @@ def test_write_degree_catalog_creates_separate_sqlite_db(tmp_path):
     conn = sqlite3.connect(db_path)
     try:
         count = conn.execute("select count(*) from degrees_catalog").fetchone()[0]
+        columns = [row[1] for row in conn.execute("pragma table_info(degrees_catalog)").fetchall()]
     finally:
         conn.close()
     assert count == 2
+    assert "title_type" in columns
+    assert "memory_resolution_status" in columns
