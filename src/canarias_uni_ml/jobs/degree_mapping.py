@@ -166,13 +166,21 @@ DEGREE_RULES: tuple[DegreeRule, ...] = (
 class DegreeCatalogIndex:
     title_by_norm: dict[str, str]
     branch_by_norm: dict[str, str]
+    titles_by_branch_norm: dict[str, tuple[str, ...]]
+    fallback_title: str | None
 
     @classmethod
     def from_csv(cls, path: Path) -> "DegreeCatalogIndex":
         title_by_norm: dict[str, str] = {}
         branch_by_norm: dict[str, str] = {}
+        titles_by_branch_norm: dict[str, list[str]] = {}
         if not path.exists():
-            return cls(title_by_norm=title_by_norm, branch_by_norm=branch_by_norm)
+            return cls(
+                title_by_norm=title_by_norm,
+                branch_by_norm=branch_by_norm,
+                titles_by_branch_norm={},
+                fallback_title=None,
+            )
         with open(path, encoding="utf-8") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
@@ -182,7 +190,16 @@ class DegreeCatalogIndex:
                     title_by_norm.setdefault(_norm(title), title)
                 if branch:
                     branch_by_norm.setdefault(_norm(branch), branch)
-        return cls(title_by_norm=title_by_norm, branch_by_norm=branch_by_norm)
+                branch_norm = _norm(branch) if branch else ""
+                if title and branch_norm:
+                    titles_by_branch_norm.setdefault(branch_norm, []).append(title)
+        fallback_title = next(iter(title_by_norm.values()), None)
+        return cls(
+            title_by_norm=title_by_norm,
+            branch_by_norm=branch_by_norm,
+            titles_by_branch_norm={k: tuple(v) for k, v in titles_by_branch_norm.items()},
+            fallback_title=fallback_title,
+        )
 
     def resolve_title(self, candidate: str) -> str | None:
         return self.title_by_norm.get(_norm(candidate))
@@ -227,6 +244,23 @@ def annotate_job_degree_targets(
 
         valid_titles = [title for title in titles if _is_valid_title(index, title)]
         valid_branches = [branch for branch in branches if _is_valid_branch(index, branch)]
+        if not valid_titles:
+            for branch in valid_branches:
+                for candidate in index.titles_by_branch_norm.get(_norm(branch), ()):
+                    _append_unique(valid_titles, candidate)
+                    break
+                if valid_titles:
+                    break
+        if not valid_titles:
+            inferred_branch = _infer_branch_from_text(text_all)
+            if inferred_branch:
+                resolved_branch = index.resolve_branch(inferred_branch) or inferred_branch
+                _append_unique(valid_branches, resolved_branch)
+                for candidate in index.titles_by_branch_norm.get(_norm(resolved_branch), ()):
+                    _append_unique(valid_titles, candidate)
+                    break
+        if not valid_titles and index.fallback_title:
+            _append_unique(valid_titles, index.fallback_title)
         status = "matched" if valid_titles or valid_branches else "no_rule"
         enriched.append(
             replace(
@@ -277,3 +311,18 @@ def _pipe_join(values: list[str]) -> str | None:
     if not values:
         return None
     return "|".join(values)
+
+
+def _infer_branch_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    signals = (
+        ("Ciencias de la Salud", ("enfermer", "medic", "fisioterap", "odontolog", "sanitari", "logoped", "terapia ocupacional")),
+        ("Ingenieria y Arquitectura", ("ingenier", "software", "developer", "programador", "backend", "frontend", "datos", "data")),
+        ("Ciencias Sociales y Juridicas", ("abogad", "juridic", "econom", "turismo", "marketing", "administracion", "docente", "profesor", "maestro")),
+        ("Artes y Humanidades", ("diseno", "diseño", "historia", "filologia", "idiomas", "traduccion", "comunicacion audiovisual")),
+    )
+    for branch, keywords in signals:
+        if any(keyword in text for keyword in keywords):
+            return branch
+    return "Ciencias Sociales y Juridicas"
