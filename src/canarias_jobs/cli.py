@@ -7,7 +7,7 @@ from src.canarias_uni_ml.cli import main
 
 def run() -> int:
     argv = sys.argv[1:]
-    if argv and argv[0] not in {"jobs", "degrees", "embed"}:
+    if argv and argv[0] not in {"jobs", "degrees", "embed", "align", "pipeline"}:
         if "--daemon" in argv:
             translated = ["jobs", "daemon", *[arg for arg in argv if arg != "--daemon"]]
         else:
