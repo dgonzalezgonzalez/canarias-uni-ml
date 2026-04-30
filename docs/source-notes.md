@@ -54,3 +54,9 @@ Semántica anti-duplicado:
 2. Si clave no existe: inserta.
 3. Si clave existe y payload cambia: actualiza.
 4. Si clave existe y payload no cambia: no sobrescribe contenido (skip).
+
+## Job-Degree Matching Policy (Current)
+
+- `target_degree_titles` now comes from scored title candidates, not broad branch-wide title expansion.
+- Selector keeps degrees with score near each job's best candidate (`best - delta`), with max cap per job.
+- Weak-evidence jobs may return `degree_match_status=no_match` and empty `target_degree_titles`.
