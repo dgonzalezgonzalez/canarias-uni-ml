@@ -12,3 +12,13 @@ Canonical job dimensions now keep both normalized values and raw scraped source 
 
 - Canonical values: `indefinido`, `temporal`, `formacion`, `fijo_discontinuo`, `autonomo`, `other`.
 - Preserve original raw label in `contract_type_raw`.
+
+## Program-Job Alignment Inputs
+
+Alignment uses normalized and mapped fields generated in the jobs pipeline:
+
+- `target_degree_titles`
+- `target_degree_branches`
+- `degree_match_status`
+
+These fields gate candidate program-job pairs before cosine similarity.

@@ -34,3 +34,23 @@ Al final del scraping escalado, el pipeline aplica:
 - inferencia de provincia desde isla cuando falta
 - deduplicación por `source_url` con fallback por `source + external_id`
 - recorte al máximo total solicitado
+
+## Nightly Daemon + Persistence
+
+Nuevo modo recomendado para operación remota:
+
+- comando: `python -m src.canarias_uni_ml.cli jobs daemon`
+- ventana por defecto: `22:00-07:30` en `Europe/Madrid`
+- proceso vivo de larga duración (no requiere relanzar cada noche)
+
+Persistencia:
+
+- base canónica: `data/processed/canarias_jobs.db` (SQLite)
+- snapshot de salida: `data/processed/canarias_jobs.csv`
+
+Semántica anti-duplicado:
+
+1. Se calcula clave canónica por oferta (`source + external_id`, fallback `source_url`).
+2. Si clave no existe: inserta.
+3. Si clave existe y payload cambia: actualiza.
+4. Si clave existe y payload no cambia: no sobrescribe contenido (skip).

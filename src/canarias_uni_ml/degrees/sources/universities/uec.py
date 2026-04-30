@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import requests
-
-from .base import MemoryResolution, StaticHtmlMemoryResolver
+from .base import UniversitySiteMemoryResolver
 
 
-class UECMemoryResolver(StaticHtmlMemoryResolver):
+class UECMemoryResolver(UniversitySiteMemoryResolver):
     def __init__(self) -> None:
         super().__init__(
             university_id="uec",
             seed_url="https://universidadeuropea.com/canarias/",
+            search_paths=(
+                "/canarias/",
+                "/canarias/grados/",
+                "/canarias/masteres-y-postgrados/",
+                "/canarias/doctorados/",
+                "/canarias/calidad-academica/",
+                "/sitemap.xml",
+            ),
             link_markers=("memoria", "verificacion", "verifica"),
         )
-
-    def resolve(self, title: str) -> MemoryResolution:
-        try:
-            response = requests.get(self.seed_url, timeout=20)
-            response.raise_for_status()
-            return self.resolve_from_html(response.text)
-        except Exception as exc:  # pragma: no cover - network variance
-            return MemoryResolution(None, "university_uec", "unresolved", f"network_error:{type(exc).__name__}")
