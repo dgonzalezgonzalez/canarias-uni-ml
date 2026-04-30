@@ -31,6 +31,11 @@ def test_cli_degrees_live_aneca_mode():
             "--limit",
             "5",
             "--with-report-text",
+            "--min-inventory-completeness",
+            "1.0",
+            "--require-all-scoped-universities",
+            "--min-description-coverage",
+            "0.85",
             "--resolve-university-memory",
         ]
     )
@@ -40,7 +45,11 @@ def test_cli_degrees_live_aneca_mode():
     assert args.cycles == "grado,master,doctorado"
     assert args.limit == 5
     assert args.with_report_text is True
+    assert args.min_inventory_completeness == 1.0
+    assert args.require_all_scoped_universities is True
+    assert args.min_description_coverage == 0.85
     assert args.resolve_university_memory is True
+    assert args.http_timeout == 30
 
 
 def test_cli_jobs_daemon_mode():
@@ -73,3 +82,13 @@ def test_cli_degrees_description_alias_sets_same_flag():
     parser = build_parser()
     args = parser.parse_args(["degrees", "catalog", "--with-description-text"])
     assert args.with_report_text is True
+
+
+def test_cli_degrees_live_universities_mode():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["degrees", "catalog", "--live-universities", "--cycles", "grado,master", "--skip-description-fetch"]
+    )
+    assert args.live_universities is True
+    assert args.cycles == "grado,master"
+    assert args.skip_description_fetch is True

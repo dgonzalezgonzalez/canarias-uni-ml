@@ -52,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     degrees_catalog = degrees_sub.add_parser("catalog", help="Build degree catalog from fixtures or public sources")
     degrees_catalog.add_argument("--output")
     degrees_catalog.add_argument("--fixture")
+    degrees_catalog.add_argument("--live-universities", action="store_true")
     degrees_catalog.add_argument("--live-aneca", action="store_true")
     degrees_catalog.add_argument(
         "--cycles",
@@ -60,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     degrees_catalog.add_argument("--limit", type=int)
     degrees_catalog.add_argument("--max-pages", type=int)
+    degrees_catalog.add_argument("--http-timeout", type=int, default=30)
+    degrees_catalog.add_argument("--skip-description-fetch", action="store_true")
+    degrees_catalog.add_argument("--min-inventory-completeness", type=float)
+    degrees_catalog.add_argument("--require-all-scoped-universities", action="store_true")
+    degrees_catalog.add_argument("--min-description-coverage", type=float)
     degrees_catalog.add_argument(
         "--with-report-text",
         action="store_true",
@@ -129,11 +135,17 @@ def main(argv: list[str] | None = None) -> int:
         return write_degree_catalog(
             output_path=args.output or str(settings.degrees_catalog_output),
             fixture_path=args.fixture,
+            live_universities=args.live_universities,
             live_aneca=args.live_aneca,
             cycles=cycles,
             limit=args.limit,
             max_pages=args.max_pages,
+            http_timeout=args.http_timeout,
+            skip_description_fetch=args.skip_description_fetch,
             with_report_text=args.with_report_text,
+            min_inventory_completeness=args.min_inventory_completeness,
+            require_all_scoped_universities=args.require_all_scoped_universities,
+            min_description_coverage=args.min_description_coverage,
             canary_only=args.canary_only,
             resolve_university_memory=args.resolve_university_memory,
             db_path=str(settings.degrees_db_output),
