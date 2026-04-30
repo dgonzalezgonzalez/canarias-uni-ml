@@ -54,3 +54,24 @@ def test_degree_mapping_uses_catalog_title_when_rule_title_missing():
         degrees_catalog_path=Path("data/processed/degrees_catalog.csv"),
     )
     assert (mapped[0].target_degree_titles or "").strip()
+
+
+def test_degree_mapping_expands_titles_from_same_branch(tmp_path):
+    catalog = tmp_path / "degrees_catalog.csv"
+    catalog.write_text(
+        "\n".join(
+            [
+                "title,branch",
+                "Grado en Turismo,Ciencias Sociales y Juridicas",
+                "Grado en Derecho,Ciencias Sociales y Juridicas",
+                "Grado en Medicina,Ciencias de la Salud",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    jobs = [_job("Técnico de turismo")]
+    mapped = annotate_job_degree_targets(jobs, degrees_catalog_path=catalog)
+    titles = set((mapped[0].target_degree_titles or "").split("|"))
+
+    assert "Grado en Turismo" in titles
+    assert "Grado en Derecho" in titles

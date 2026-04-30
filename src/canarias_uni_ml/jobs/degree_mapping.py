@@ -10,6 +10,13 @@ from .models import JobRecord
 from .utils import clean_text
 
 DEFAULT_DEGREES_CATALOG_PATH = Path("data/processed/degrees_catalog.csv")
+CANONICAL_BRANCHES = (
+    "Ciencias de la Salud",
+    "Ingenieria y Arquitectura",
+    "Ciencias Sociales y Juridicas",
+    "Artes y Humanidades",
+    "Ciencias",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +175,7 @@ class DegreeCatalogIndex:
     branch_by_norm: dict[str, str]
     titles_by_branch_norm: dict[str, tuple[str, ...]]
     fallback_title: str | None
+    fallback_branch: str | None
 
     @classmethod
     def from_csv(cls, path: Path) -> "DegreeCatalogIndex":
@@ -180,12 +188,16 @@ class DegreeCatalogIndex:
                 branch_by_norm=branch_by_norm,
                 titles_by_branch_norm={},
                 fallback_title=None,
+                fallback_branch=None,
             )
         with open(path, encoding="utf-8") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
                 title = clean_text(row.get("title"))
                 branch = clean_text(row.get("branch"))
+                if not branch and title:
+                    inferred = _infer_branch_from_text(_norm(title))
+                    branch = inferred or branch
                 if title:
                     title_by_norm.setdefault(_norm(title), title)
                 if branch:
@@ -194,11 +206,13 @@ class DegreeCatalogIndex:
                 if title and branch_norm:
                     titles_by_branch_norm.setdefault(branch_norm, []).append(title)
         fallback_title = next(iter(title_by_norm.values()), None)
+        fallback_branch = next(iter(branch_by_norm.values()), None) or "Ciencias Sociales y Juridicas"
         return cls(
             title_by_norm=title_by_norm,
             branch_by_norm=branch_by_norm,
             titles_by_branch_norm={k: tuple(v) for k, v in titles_by_branch_norm.items()},
             fallback_title=fallback_title,
+            fallback_branch=fallback_branch,
         )
 
     def resolve_title(self, candidate: str) -> str | None:
@@ -242,23 +256,19 @@ def annotate_job_degree_targets(
                 resolved_title = index.resolve_title(candidate_title) or candidate_title
                 _append_unique(titles, resolved_title)
 
-        valid_titles = [title for title in titles if _is_valid_title(index, title)]
         valid_branches = [branch for branch in branches if _is_valid_branch(index, branch)]
-        if not valid_titles:
-            for branch in valid_branches:
-                for candidate in index.titles_by_branch_norm.get(_norm(branch), ()):
-                    _append_unique(valid_titles, candidate)
-                    break
-                if valid_titles:
-                    break
-        if not valid_titles:
+        if not valid_branches:
             inferred_branch = _infer_branch_from_text(text_all)
             if inferred_branch:
                 resolved_branch = index.resolve_branch(inferred_branch) or inferred_branch
                 _append_unique(valid_branches, resolved_branch)
-                for candidate in index.titles_by_branch_norm.get(_norm(resolved_branch), ()):
-                    _append_unique(valid_titles, candidate)
-                    break
+        if not valid_branches and index.fallback_branch:
+            _append_unique(valid_branches, index.fallback_branch)
+
+        valid_titles = [title for title in titles if _is_valid_title(index, title)]
+        for branch in valid_branches:
+            for candidate in index.titles_by_branch_norm.get(_norm(branch), ()):
+                _append_unique(valid_titles, candidate)
         if not valid_titles and index.fallback_title:
             _append_unique(valid_titles, index.fallback_title)
         status = "matched" if valid_titles or valid_branches else "no_rule"
