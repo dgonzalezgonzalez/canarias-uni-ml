@@ -10,9 +10,13 @@ from .models import JobRecord
 from .utils import clean_text
 
 DEFAULT_DEGREES_CATALOG_PATH = Path("data/processed/degrees_catalog.csv")
-CANDIDATE_SCORE_DELTA = 0.15
-CANDIDATE_SCORE_MIN = 0.20
-CANDIDATE_MAX_KEEP = 8
+CANDIDATE_SCORE_DELTA = 0.10
+CANDIDATE_SCORE_MIN = 0.28
+CANDIDATE_MAX_KEEP = 5
+TITLE_WEIGHT = 0.70
+DESCRIPTION_WEIGHT = 0.30
+
+TECH_BRANCH = "ingenieria y arquitectura"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +115,7 @@ DEGREE_RULES: tuple[DegreeRule, ...] = (
     ),
     DegreeRule(
         name="engineering_electrical",
-        keywords=("ingeniero electrico", "ingenieria electrica"),
+        keywords=("ingeniero electrico", "ingenieria electrica", "electricista", "electrico", "instalaciones electricas"),
         branches=("Ingenieria y Arquitectura",),
         titles=("Grado en Ingenieria Electrica",),
     ),
@@ -170,27 +174,44 @@ class DegreeCatalogIndex:
     title_by_norm: dict[str, str]
     branch_by_norm: dict[str, str]
     branch_by_title_norm: dict[str, str]
+    description_by_title_norm: dict[str, str]
 
     @classmethod
     def from_csv(cls, path: Path) -> "DegreeCatalogIndex":
         title_by_norm: dict[str, str] = {}
         branch_by_norm: dict[str, str] = {}
         branch_by_title_norm: dict[str, str] = {}
+        description_by_title_norm: dict[str, str] = {}
         if not path.exists():
-            return cls(title_by_norm=title_by_norm, branch_by_norm=branch_by_norm, branch_by_title_norm=branch_by_title_norm)
+            return cls(
+                title_by_norm=title_by_norm,
+                branch_by_norm=branch_by_norm,
+                branch_by_title_norm=branch_by_title_norm,
+                description_by_title_norm=description_by_title_norm,
+            )
         with open(path, encoding="utf-8") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
                 title = clean_text(row.get("title"))
                 branch = clean_text(row.get("branch"))
+                description = clean_text(row.get("description"))
                 if title:
                     title_norm = _norm(title)
+                    if not branch:
+                        branch = _infer_branch_from_text(title_norm)
                     title_by_norm.setdefault(title_norm, title)
                     if branch:
                         branch_by_title_norm.setdefault(title_norm, branch)
+                    if description:
+                        description_by_title_norm.setdefault(title_norm, _norm(description))
                 if branch:
                     branch_by_norm.setdefault(_norm(branch), branch)
-        return cls(title_by_norm=title_by_norm, branch_by_norm=branch_by_norm, branch_by_title_norm=branch_by_title_norm)
+        return cls(
+            title_by_norm=title_by_norm,
+            branch_by_norm=branch_by_norm,
+            branch_by_title_norm=branch_by_title_norm,
+            description_by_title_norm=description_by_title_norm,
+        )
 
     def resolve_title(self, candidate: str) -> str | None:
         return self.title_by_norm.get(_norm(candidate))
@@ -244,7 +265,7 @@ def annotate_job_degree_targets(
             explicit_branches=explicit_branches,
         )
 
-        selected = _select_titles(scored)
+        selected = _select_titles(scored, is_electric=is_teaching_post is False and _looks_electric_role(title_only, text_all))
         selected_titles = [item["title"] for item in selected]
         selected_branches: list[str] = []
         for title in selected_titles:
@@ -274,43 +295,63 @@ def _score_catalog_titles(
 ) -> list[dict[str, float | str]]:
     explicit_title_norms = {_norm(title) for title in explicit_titles}
     explicit_branch_norms = {_norm(branch) for branch in explicit_branches}
+    is_electric = _looks_electric_role(job_title_norm, all_job_text_norm)
     rows: list[dict[str, float | str]] = []
 
     for title_norm, title in index.title_by_norm.items():
-        base = _title_similarity(job_title_norm, title_norm)
+        title_score = _text_similarity(job_title_norm, title_norm)
+        degree_desc_norm = index.description_by_title_norm.get(title_norm, "")
+        desc_score = _text_similarity(all_job_text_norm, degree_desc_norm) if degree_desc_norm else 0.0
+        base = TITLE_WEIGHT * title_score + DESCRIPTION_WEIGHT * desc_score
         if base <= 0.0 and not explicit_titles and not explicit_branches:
             continue
 
         bonus = 0.0
         if title_norm in explicit_title_norms:
-            bonus += 0.30
+            bonus += 0.15
+
         title_branch_norm = _norm(index.branch_by_title_norm.get(title_norm, ""))
         if title_branch_norm and title_branch_norm in explicit_branch_norms:
             bonus += 0.10
-        if all_job_text_norm and title_norm in all_job_text_norm:
-            bonus += 0.10
 
-        score = min(1.0, base + bonus)
-        rows.append({"title": title, "score": score})
+        penalty = 0.0
+        if is_electric and title_branch_norm and title_branch_norm == TECH_BRANCH:
+            bonus += 0.15
+        if is_electric and title_branch_norm and title_branch_norm != TECH_BRANCH:
+            penalty += 0.30
+
+        score = max(0.0, min(1.0, base + bonus - penalty))
+        if is_electric and title_branch_norm and title_branch_norm != TECH_BRANCH and score < 0.65:
+            continue
+        rows.append({"title": title, "score": score, "branch_norm": title_branch_norm})
 
     rows.sort(key=lambda x: (-float(x["score"]), str(x["title"])))
     return rows
 
 
-def _select_titles(scored: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
+def _select_titles(scored: list[dict[str, float | str]], *, is_electric: bool = False) -> list[dict[str, float | str]]:
     if not scored:
         return []
     best_score = float(scored[0]["score"])
     if best_score < CANDIDATE_SCORE_MIN:
         return []
     cutoff = best_score - CANDIDATE_SCORE_DELTA
-    kept = [row for row in scored if float(row["score"]) >= cutoff]
-    return kept[:CANDIDATE_MAX_KEEP]
+    kept = [row for row in scored if float(row["score"]) >= cutoff and float(row["score"]) >= CANDIDATE_SCORE_MIN]
+    kept = kept[:CANDIDATE_MAX_KEEP]
+    if kept:
+        return kept
+    if is_electric:
+        tech = [
+            row for row in scored
+            if str(row.get("branch_norm", "")) == TECH_BRANCH
+        ]
+        return tech[:2]
+    return kept
 
 
-def _title_similarity(job_title_norm: str, degree_title_norm: str) -> float:
-    job_tokens = _tokenize(job_title_norm)
-    degree_tokens = _tokenize(degree_title_norm)
+def _text_similarity(job_text_norm: str, degree_text_norm: str) -> float:
+    job_tokens = _tokenize(job_text_norm)
+    degree_tokens = _tokenize(degree_text_norm)
     if not job_tokens or not degree_tokens:
         return 0.0
     overlap = 0
@@ -323,7 +364,31 @@ def _title_similarity(job_title_norm: str, degree_title_norm: str) -> float:
 def _tokenize(text: str) -> list[str]:
     if not text:
         return []
-    stop = {"grado", "en", "de", "la", "el", "los", "las", "y", "del", "un", "una"}
+    stop = {
+        "grado",
+        "master",
+        "máster",
+        "en",
+        "de",
+        "la",
+        "el",
+        "los",
+        "las",
+        "y",
+        "del",
+        "un",
+        "una",
+        "programa",
+        "formacion",
+        "formación",
+        "general",
+        "tecnico",
+        "tecnicos",
+        "tecnica",
+        "tecnicas",
+        "apoyo",
+        "asistencia",
+    }
     return [tok for tok in text.split() if tok and tok not in stop]
 
 
@@ -333,6 +398,21 @@ def _token_match(a: str, b: str) -> bool:
     if len(a) >= 5 and len(b) >= 5:
         return a.startswith(b[:5]) or b.startswith(a[:5])
     return False
+
+
+def _looks_electric_role(job_title_norm: str, all_job_text_norm: str) -> bool:
+    text = f"{job_title_norm} {all_job_text_norm}".strip()
+    electric_signals = (
+        "electricista",
+        "electrico",
+        "electrica",
+        "instalaciones electricas",
+        "cuadro electrico",
+        "baja tension",
+        "alta tension",
+        "electrotecn",
+    )
+    return any(signal in text for signal in electric_signals)
 
 
 def _norm(value: str) -> str:
@@ -361,3 +441,19 @@ def _pipe_join(values: list[str]) -> str | None:
     if not values:
         return None
     return "|".join(values)
+
+
+def _infer_branch_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    signals = (
+        ("Ciencias de la Salud", ("enfermer", "medicin", "fisioterap", "odontolog", "sanitari", "logoped", "terapia ocupacional")),
+        ("Ingenieria y Arquitectura", ("ingenier", "electron", "electr", "telecom", "industrial", "informatic", "software", "sistemas", "renovables")),
+        ("Ciencias Sociales y Juridicas", ("derecho", "juridic", "econom", "turismo", "marketing", "administracion", "empresa", "docente", "maestro")),
+        ("Artes y Humanidades", ("diseno", "historia", "filologia", "idiomas", "traduccion", "comunicacion audiovisual")),
+        ("Ciencias", ("matematic", "fisic", "quimic", "biolog", "ciencias")),
+    )
+    for branch, keywords in signals:
+        if any(keyword in text for keyword in keywords):
+            return branch
+    return None
