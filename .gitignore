@@ -9,6 +9,7 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/processed/canarias_jobs.csv
+!data/processed/program_job_similarity_target_titles_pairs.csv
 playwright-report/
 browser-auth/
 *.log
