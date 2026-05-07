@@ -1,0 +1,7 @@
+metric,value
+jobs_total,12
+jobs_with_public_option,5
+jobs_with_private_option,12
+jobs_with_both_options,5
+mean_best_public_among_jobs_with_public,0.7639727832921782
+mean_best_private_among_jobs_with_private,0.7204900968552098

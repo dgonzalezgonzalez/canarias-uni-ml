@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+import unicodedata
 
 
 @dataclass(slots=True)
@@ -24,11 +26,14 @@ def parse_pipe_values(value: str | None) -> set[str]:
 def build_candidate_pairs(jobs: list[dict], degrees: list[dict], *, min_text_len: int = 40) -> list[CandidatePair]:
     by_title: dict[str, list[dict]] = {}
     by_branch: dict[str, list[dict]] = {}
+    titles_by_family: dict[str, set[str]] = {}
     for degree in degrees:
         title = (degree.get("title") or "").strip()
         branch = (degree.get("branch") or "").strip()
         if title:
             by_title.setdefault(title, []).append(degree)
+            for family in _family_keys(title):
+                titles_by_family.setdefault(family, set()).add(title)
         if branch:
             by_branch.setdefault(branch, []).append(degree)
 
@@ -40,12 +45,26 @@ def build_candidate_pairs(jobs: list[dict], degrees: list[dict], *, min_text_len
 
         target_titles = parse_pipe_values(job.get("target_degree_titles"))
         target_branches = parse_pipe_values(job.get("target_degree_branches"))
+        target_families = {
+            family
+            for title in target_titles
+            for family in _family_keys(title)
+        }
 
         matched_degrees: list[dict] = []
         for title in target_titles:
-            matched_degrees.extend(by_title.get(title, []))
+            for expanded_title in _expand_target_title(title, titles_by_family):
+                matched_degrees.extend(by_title.get(expanded_title, []))
         for branch in target_branches:
-            matched_degrees.extend(by_branch.get(branch, []))
+            branch_rows = by_branch.get(branch, [])
+            if not target_families:
+                matched_degrees.extend(branch_rows)
+                continue
+            for degree in branch_rows:
+                degree_title = (degree.get("title") or "").strip()
+                degree_families = _family_keys(degree_title)
+                if degree_families and degree_families.intersection(target_families):
+                    matched_degrees.append(degree)
 
         job_text = (job.get("description") or job.get("title") or "").strip()
         if len(job_text) < min_text_len:
@@ -75,6 +94,53 @@ def build_candidate_pairs(jobs: list[dict], degrees: list[dict], *, min_text_len
             )
 
     return pairs
+
+
+def _expand_target_title(title: str, titles_by_family: dict[str, set[str]]) -> set[str]:
+    expanded = {title}
+    for family in _family_keys(title):
+        expanded.update(titles_by_family.get(family, set()))
+    return expanded
+
+
+def _family_keys(title: str) -> set[str]:
+    """
+    Conservative family normalization:
+    - keeps only strongly related degree variants (same core program wording),
+    - avoids broad fuzzy expansion that could pull unrelated programs.
+    """
+    norm = _norm(title)
+    keys: set[str] = set()
+
+    # "grado en psicologia - presencial ..." -> "psicologia"
+    m = re.search(r"\bgrado en ([a-z0-9 ]+)", norm)
+    if m:
+        program = _clean_program_tail(m.group(1))
+        if program:
+            keys.add(program)
+
+    # "doble grado en psicologia y criminologia" -> {"psicologia","criminologia"}
+    d = re.search(r"\bdoble grado en ([a-z0-9 ]+)", norm)
+    if d:
+        chunk = _clean_program_tail(d.group(1))
+        for part in [p.strip() for p in re.split(r"\by\b", chunk) if p.strip()]:
+            keys.add(part)
+
+    return keys
+
+
+def _clean_program_tail(text: str) -> str:
+    text = re.split(r"\bonline\b|\bpresencial\b|\bsemipresencial\b|\bmodalidad\b|\bduracion\b", text)[0]
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _norm(value: str) -> str:
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9 ]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _job_key(job: dict, idx: int) -> str:
