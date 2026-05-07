@@ -11,7 +11,11 @@ Run the jobs scraper as a long-lived process that only executes inside a nightly
   --window-start 22:00 \
   --window-end 07:30 \
   --timezone Europe/Madrid \
-  --cooldown-minutes 10
+  --strategy scale \
+  --time-limit-minutes 45 \
+  --cooldown-minutes 5 \
+  --stagnation-cycles 6 \
+  --fail-on-stagnation
 ```
 
 ## Runtime Signals
@@ -35,3 +39,29 @@ Run the jobs scraper as a long-lived process that only executes inside a nightly
 ```
 
 Use run-once preflight before enabling unattended service mode.
+
+## Deduplicate Existing Database
+
+Stop daemon first, then compact DB in place:
+
+```bash
+.venv/bin/python -m src.canarias_uni_ml.cli jobs compact --db-path data/processed/canarias_jobs.db
+```
+
+This keeps one latest logical row per job and removes stale duplicates.
+
+## Stagnation Detection
+
+- A non-productive cycle is `inserted + updated == 0`.
+- `--stagnation-cycles N` counts consecutive non-productive cycles.
+- With `--fail-on-stagnation`, daemon exits non-zero at threshold so `systemd` restarts it.
+
+## Throughput Tuning
+
+- Increase per-night ingestion:
+  - use `--strategy scale`
+  - increase `--time-limit-minutes`
+  - decrease `--cooldown-minutes`
+- Reduce churn when sources are unstable:
+  - raise `--stagnation-cycles`
+  - disable `--fail-on-stagnation` temporarily (warning-only mode)

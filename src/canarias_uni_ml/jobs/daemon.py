@@ -10,7 +10,7 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 from ..io import ensure_parent
-from .pipeline import run_jobs_pipeline
+from .pipeline import run_jobs_pipeline_with_outcome, run_jobs_scale_with_outcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +119,10 @@ def run_jobs_daemon(
     idle_poll_seconds: int = 30,
     run_once: bool = False,
     lock_path: str | None = None,
+    strategy: str = "scrape",
+    time_limit_minutes: int = 45,
+    stagnation_cycles: int = 0,
+    fail_on_stagnation: bool = False,
 ) -> int:
     tz = ZoneInfo(timezone_name)
     window = NightWindow(start=parse_hhmm(window_start), end=parse_hhmm(window_end))
@@ -138,13 +142,15 @@ def run_jobs_daemon(
     try:
         with lock:
             print(
-                "[start] jobs daemon window={start}-{end} tz={tz} cooldown={cooldown}m".format(
+                "[start] jobs daemon window={start}-{end} tz={tz} cooldown={cooldown}m strategy={strategy}".format(
                     start=window_start,
                     end=window_end,
                     tz=timezone_name,
                     cooldown=cooldown_minutes,
+                    strategy=strategy,
                 )
             )
+            stagnant_cycles = 0
             while not stop_requested:
                 now = datetime.now(tz)
                 if not window.is_active(now):
@@ -154,12 +160,42 @@ def run_jobs_daemon(
                     continue
 
                 print("[cycle] starting scrape cycle")
-                exit_code = run_jobs_pipeline(
-                    limit_per_source=limit_per_source,
-                    output_path=output_path,
-                    max_total=max_total,
-                    db_path=db_path,
+                if strategy == "scale":
+                    outcome = run_jobs_scale_with_outcome(
+                        output_path=output_path,
+                        db_path=db_path,
+                        time_limit_minutes=time_limit_minutes,
+                        max_total=max_total or 40_000,
+                    )
+                else:
+                    outcome = run_jobs_pipeline_with_outcome(
+                        limit_per_source=limit_per_source,
+                        output_path=output_path,
+                        max_total=max_total,
+                        db_path=db_path,
+                    )
+                exit_code = outcome.exit_code
+                print(
+                    "[cycle] strategy={strategy} scraped={scraped} inserted={inserted} updated={updated} unchanged={unchanged} failures={failures} elapsed={elapsed:.1f}s".format(
+                        strategy=outcome.strategy,
+                        scraped=outcome.scraped,
+                        inserted=outcome.inserted,
+                        updated=outcome.updated,
+                        unchanged=outcome.unchanged,
+                        failures=len(outcome.failures),
+                        elapsed=outcome.elapsed_seconds,
+                    )
                 )
+                if (outcome.inserted + outcome.updated) == 0:
+                    stagnant_cycles += 1
+                    print(f"[warn] non-productive cycle count={stagnant_cycles}")
+                    if stagnation_cycles > 0 and stagnant_cycles >= stagnation_cycles:
+                        print(f"[warn] stagnation threshold reached ({stagnation_cycles})")
+                        if fail_on_stagnation:
+                            print("[error] exiting non-zero to allow supervisor restart")
+                            return 3
+                else:
+                    stagnant_cycles = 0
                 if run_once:
                     return exit_code
                 if stop_requested:

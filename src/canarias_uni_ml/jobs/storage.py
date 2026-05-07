@@ -23,15 +23,23 @@ class UpsertStats:
     unchanged: int = 0
 
 
+@dataclass(slots=True)
+class CompactionStats:
+    before: int = 0
+    after: int = 0
+    removed: int = 0
+    ambiguous_ties: int = 0
+
+
 def canonical_job_key(record: JobRecord) -> str:
     source = clean_text(record.source) or "unknown"
-    external_id = clean_text(record.external_id)
-    if external_id:
-        return f"id::{source.lower()}::{external_id}"
-
     source_url = (clean_text(record.source_url) or "").lower()
     if source_url:
         return f"url::{source_url}"
+
+    external_id = clean_text(record.external_id)
+    if external_id:
+        return f"id::{source.lower()}::{external_id}"
 
     title = clean_text(record.title)
     company = clean_text(record.company)
@@ -46,6 +54,19 @@ def canonical_job_key(record: JobRecord) -> str:
         date=publication_date or "",
         location=location or "",
     )
+
+
+def canonical_secondary_merge_key(record: JobRecord) -> str | None:
+    source = (clean_text(record.source) or "").lower()
+    title = (clean_text(record.title) or "").lower()
+    company = (clean_text(record.company) or "").lower()
+    publication_date = (clean_text(record.publication_date) or "").lower()
+    location = (
+        clean_text(record.raw_location or record.municipality or record.island or record.province) or ""
+    ).lower()
+    if not (source and title and company and publication_date):
+        return None
+    return f"sec::{source}::{title}::{company}::{publication_date}::{location}"
 
 
 def payload_hash(record: JobRecord) -> str:
@@ -77,6 +98,7 @@ class JobsRepository:
                 CREATE TABLE IF NOT EXISTS jobs (
                     job_key TEXT PRIMARY KEY,
                     {column_defs},
+                    secondary_key TEXT,
                     payload_hash TEXT NOT NULL,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
@@ -84,7 +106,11 @@ class JobsRepository:
                 )
                 """
             )
+            cols = [row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
+            if "secondary_key" not in cols:
+                conn.execute("ALTER TABLE jobs ADD COLUMN secondary_key TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_secondary_key ON jobs(secondary_key)")
             conn.commit()
 
     def upsert_records(self, records: Iterable[JobRecord]) -> UpsertStats:
@@ -93,29 +119,104 @@ class JobsRepository:
         with self._connect() as conn:
             for record in records:
                 key = canonical_job_key(record)
+                secondary_key = canonical_secondary_merge_key(record)
                 record_hash = payload_hash(record)
                 existing = conn.execute(
-                    "SELECT payload_hash FROM jobs WHERE job_key = ?",
-                    (key,),
+                    """
+                    SELECT job_key, payload_hash
+                    FROM jobs
+                    WHERE job_key = ?
+                       OR (? IS NOT NULL AND secondary_key = ?)
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """,
+                    (key, secondary_key, secondary_key),
                 ).fetchone()
                 row = record.to_row()
                 if existing is None:
-                    self._insert(conn=conn, job_key=key, row=row, row_hash=record_hash, now=now)
+                    self._insert(
+                        conn=conn,
+                        job_key=key,
+                        secondary_key=secondary_key,
+                        row=row,
+                        row_hash=record_hash,
+                        now=now,
+                    )
                     stats.inserted += 1
                     continue
 
                 if existing["payload_hash"] == record_hash:
                     conn.execute(
-                        "UPDATE jobs SET last_seen_at = ? WHERE job_key = ?",
-                        (now, key),
+                        """
+                        UPDATE jobs
+                        SET last_seen_at = ?,
+                            secondary_key = ?
+                        WHERE job_key = ?
+                        """,
+                        (now, secondary_key, existing["job_key"]),
                     )
                     stats.unchanged += 1
                     continue
 
-                self._update(conn=conn, job_key=key, row=row, row_hash=record_hash, now=now)
+                self._update(
+                    conn=conn,
+                    old_job_key=existing["job_key"],
+                    new_job_key=key,
+                    secondary_key=secondary_key,
+                    row=row,
+                    row_hash=record_hash,
+                    now=now,
+                )
                 stats.updated += 1
             conn.commit()
         return stats
+
+    def compact_latest_records(self) -> CompactionStats:
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT job_key, {", ".join(f'"{name}"' for name in JOB_FIELDS)}, payload_hash, first_seen_at, last_seen_at, updated_at
+                FROM jobs
+                """
+            ).fetchall()
+            before = len(rows)
+            if before == 0:
+                return CompactionStats(before=0, after=0, removed=0, ambiguous_ties=0)
+
+            winners_primary: dict[str, sqlite3.Row] = {}
+            ties = 0
+            for row in rows:
+                record = JobRecord(**{name: row[name] for name in JOB_FIELDS})
+                logical_key = canonical_job_key(record)
+                current = winners_primary.get(logical_key)
+                if current is None:
+                    winners_primary[logical_key] = row
+                    continue
+                if self._row_sort_key(row) > self._row_sort_key(current):
+                    winners_primary[logical_key] = row
+                elif self._row_sort_key(row) == self._row_sort_key(current):
+                    ties += 1
+
+            winners: dict[str, sqlite3.Row] = {}
+            for row in winners_primary.values():
+                record = JobRecord(**{name: row[name] for name in JOB_FIELDS})
+                logical_key = canonical_secondary_merge_key(record) or canonical_job_key(record)
+                current = winners.get(logical_key)
+                if current is None:
+                    winners[logical_key] = row
+                    continue
+                if self._row_sort_key(row) > self._row_sort_key(current):
+                    winners[logical_key] = row
+                elif self._row_sort_key(row) == self._row_sort_key(current):
+                    ties += 1
+
+            conn.execute("DELETE FROM jobs")
+            for winner in winners.values():
+                self._insert_row(conn=conn, row=winner)
+            conn.commit()
+
+        after = len(winners)
+        return CompactionStats(before=before, after=after, removed=before - after, ambiguous_ties=ties)
 
     def export_csv(self, output_path: str | Path) -> int:
         query = f"""
@@ -143,23 +244,55 @@ class JobsRepository:
         *,
         conn: sqlite3.Connection,
         job_key: str,
+        secondary_key: str | None,
         row: dict[str, str | None],
         row_hash: str,
         now: str,
     ) -> None:
-        columns = ("job_key", *JOB_FIELDS, "payload_hash", "first_seen_at", "last_seen_at", "updated_at")
+        columns = (
+            "job_key",
+            *JOB_FIELDS,
+            "secondary_key",
+            "payload_hash",
+            "first_seen_at",
+            "last_seen_at",
+            "updated_at",
+        )
         placeholders = ", ".join("?" for _ in columns)
         quoted_columns = ", ".join(f'"{column}"' for column in columns)
         conn.execute(
             f"INSERT INTO jobs ({quoted_columns}) VALUES ({placeholders})",
-            (job_key, *[row.get(name) for name in JOB_FIELDS], row_hash, now, now, now),
+            (job_key, *[row.get(name) for name in JOB_FIELDS], secondary_key, row_hash, now, now, now),
+        )
+
+    def _insert_row(self, *, conn: sqlite3.Connection, row: sqlite3.Row) -> None:
+        secondary_key = row["secondary_key"] if "secondary_key" in row.keys() else None
+        columns = (
+            "job_key",
+            *JOB_FIELDS,
+            "secondary_key",
+            "payload_hash",
+            "first_seen_at",
+            "last_seen_at",
+            "updated_at",
+        )
+        placeholders = ", ".join("?" for _ in columns)
+        quoted_columns = ", ".join(f'"{column}"' for column in columns)
+        conn.execute(
+            f"INSERT INTO jobs ({quoted_columns}) VALUES ({placeholders})",
+            tuple(
+                secondary_key if column == "secondary_key" else row[column]
+                for column in columns
+            ),
         )
 
     def _update(
         self,
         *,
         conn: sqlite3.Connection,
-        job_key: str,
+        old_job_key: str,
+        new_job_key: str,
+        secondary_key: str | None,
         row: dict[str, str | None],
         row_hash: str,
         now: str,
@@ -168,11 +301,30 @@ class JobsRepository:
         conn.execute(
             f"""
             UPDATE jobs
-            SET {assignments},
+            SET job_key = ?,
+                {assignments},
+                secondary_key = ?,
                 payload_hash = ?,
                 last_seen_at = ?,
                 updated_at = ?
             WHERE job_key = ?
             """,
-            (*[row.get(name) for name in JOB_FIELDS], row_hash, now, now, job_key),
+            (new_job_key, *[row.get(name) for name in JOB_FIELDS], secondary_key, row_hash, now, now, old_job_key),
         )
+
+    def _row_sort_key(self, row: sqlite3.Row) -> tuple[str, str, str, str]:
+        update_date = _normalize_date(row["update_date"])
+        publication_date = _normalize_date(row["publication_date"])
+        updated_at = _normalize_date(row["updated_at"])
+        # Deterministic final tie-breaker to keep compaction stable.
+        payload_hash = row["payload_hash"] or ""
+        return (update_date, publication_date, updated_at, payload_hash)
+
+
+def _normalize_date(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return value

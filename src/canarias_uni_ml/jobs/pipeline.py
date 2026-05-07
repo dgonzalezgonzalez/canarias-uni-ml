@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -14,6 +16,18 @@ from .storage import JobsRepository
 
 PROCESSED_DIR = Path("data/processed")
 DEFAULT_JOBS_DB = Path("data/processed/canarias_jobs.db")
+
+
+@dataclass(slots=True)
+class PipelineOutcome:
+    exit_code: int
+    scraped: int
+    inserted: int
+    updated: int
+    unchanged: int
+    failures: list[str]
+    elapsed_seconds: float
+    strategy: str = "scrape"
 
 
 def run_jobs_merge(output_path: str) -> int:
@@ -90,6 +104,24 @@ def run_jobs_pipeline(
     db_path: str | None = None,
     spiders: list[object] | None = None,
 ) -> int:
+    outcome = run_jobs_pipeline_with_outcome(
+        limit_per_source=limit_per_source,
+        output_path=output_path,
+        max_total=max_total,
+        db_path=db_path,
+        spiders=spiders,
+    )
+    return outcome.exit_code
+
+
+def run_jobs_pipeline_with_outcome(
+    limit_per_source: int,
+    output_path: str,
+    max_total: int | None = None,
+    db_path: str | None = None,
+    spiders: list[object] | None = None,
+) -> PipelineOutcome:
+    start = time.time()
     spiders = spiders or [SCESpider(), TurijobsSpider(), JobspySpider()]
     all_records, failures = _collect_records(spiders, limit_per_source)
 
@@ -113,8 +145,45 @@ def run_jobs_pipeline(
         print("[failures]")
         for failure in failures:
             print(f" - {failure}")
-    return 0
+    return PipelineOutcome(
+        exit_code=0,
+        scraped=len(all_records),
+        inserted=stats.inserted,
+        updated=stats.updated,
+        unchanged=stats.unchanged,
+        failures=failures,
+        elapsed_seconds=time.time() - start,
+        strategy="scrape",
+    )
 
 
 def run_jobs_scale(**kwargs) -> int:
     return run_scaled(**kwargs)
+
+
+def run_jobs_scale_with_outcome(
+    *,
+    output_path: str,
+    db_path: str,
+    time_limit_minutes: int = 45,
+    max_total: int = 40_000,
+) -> PipelineOutcome:
+    start = time.time()
+    stats = run_scaled(
+        output_path=output_path,
+        db_path=db_path,
+        time_limit_minutes=time_limit_minutes,
+        max_total=max_total,
+        return_stats=True,
+    )
+    failures = list(stats.get("failures", []))
+    return PipelineOutcome(
+        exit_code=0,
+        scraped=int(stats.get("scraped", 0)),
+        inserted=int(stats.get("inserted", 0)),
+        updated=int(stats.get("updated", 0)),
+        unchanged=int(stats.get("unchanged", 0)),
+        failures=failures,
+        elapsed_seconds=time.time() - start,
+        strategy="scale",
+    )

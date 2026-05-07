@@ -99,6 +99,46 @@ Canonical and raw values both persist:
 
 Production deployment guide: `docs/operations/remote-nightly-deploy.md`
 
+## Remote run order (safe)
+
+Run in this exact order on the remote host:
+
+0. Pull latest code first (required for secondary merge dedupe rule)
+```bash
+git pull
+```
+
+1. Backup current DB
+```bash
+cp data/processed/canarias_jobs.db data/processed/canarias_jobs.$(date +%F).bak.db
+```
+
+2. Stop daemon/service
+```bash
+sudo systemctl stop canarias-jobs-daemon.service
+```
+
+3. Compact DB (drop logical duplicates, keep latest row per job)
+```bash
+.venv/bin/python -m src.canarias_uni_ml.cli jobs compact --db-path data/processed/canarias_jobs.db
+```
+
+4. Preflight one cycle
+```bash
+.venv/bin/python -m src.canarias_uni_ml.cli jobs daemon --run-once --strategy scale --time-limit-minutes 45
+```
+
+5. Start nightly daemon
+```bash
+sudo systemctl start canarias-jobs-daemon.service
+```
+
+6. Monitor health/logs
+```bash
+sudo systemctl status canarias-jobs-daemon.service
+sudo journalctl -u canarias-jobs-daemon.service -f
+```
+
 ## Alignment Notes
 
 - Similarity is computed only on sensible candidate pairs from rule-based mapping fields.

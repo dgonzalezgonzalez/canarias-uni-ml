@@ -1,5 +1,10 @@
 from src.canarias_uni_ml.jobs.models import JobRecord
-from src.canarias_uni_ml.jobs.pipeline import _select_with_source_coverage, run_jobs_pipeline
+from src.canarias_uni_ml.jobs.pipeline import (
+    _select_with_source_coverage,
+    run_jobs_pipeline,
+    run_jobs_pipeline_with_outcome,
+    run_jobs_scale_with_outcome,
+)
 from src.canarias_uni_ml.jobs.spiders.base import SpiderError, SpiderResult
 
 
@@ -92,3 +97,41 @@ def test_run_jobs_pipeline_continues_when_one_source_fails(tmp_path):
     )
     assert exit_code == 0
     assert output.exists()
+
+
+def test_run_jobs_pipeline_with_outcome_reports_updates(tmp_path):
+    output = tmp_path / "jobs.csv"
+    db_path = tmp_path / "jobs.db"
+    outcome = run_jobs_pipeline_with_outcome(
+        limit_per_source=10,
+        output_path=str(output),
+        db_path=str(db_path),
+        spiders=[StaticSpider("sce", [_record("sce", 1, title="title-v1")])],
+    )
+    assert outcome.exit_code == 0
+    assert outcome.inserted == 1
+    assert outcome.strategy == "scrape"
+
+
+def test_run_jobs_scale_with_outcome_uses_scale_stats(tmp_path, monkeypatch):
+    def fake_run_scaled(**kwargs):
+        return {
+            "scraped": 100,
+            "written": 90,
+            "inserted": 70,
+            "updated": 10,
+            "unchanged": 10,
+            "failures": ["x"],
+        }
+
+    monkeypatch.setattr("src.canarias_uni_ml.jobs.pipeline.run_scaled", fake_run_scaled)
+    outcome = run_jobs_scale_with_outcome(
+        output_path=str(tmp_path / "jobs.csv"),
+        db_path=str(tmp_path / "jobs.db"),
+        time_limit_minutes=20,
+        max_total=123,
+    )
+    assert outcome.exit_code == 0
+    assert outcome.scraped == 100
+    assert outcome.inserted == 70
+    assert outcome.strategy == "scale"

@@ -66,6 +66,13 @@ def test_cli_jobs_daemon_mode():
             "Europe/Madrid",
             "--cooldown-minutes",
             "5",
+            "--strategy",
+            "scale",
+            "--time-limit-minutes",
+            "30",
+            "--stagnation-cycles",
+            "2",
+            "--fail-on-stagnation",
             "--run-once",
         ]
     )
@@ -75,7 +82,19 @@ def test_cli_jobs_daemon_mode():
     assert args.window_end == "07:30"
     assert args.timezone == "Europe/Madrid"
     assert args.cooldown_minutes == 5
+    assert args.strategy == "scale"
+    assert args.time_limit_minutes == 30
+    assert args.stagnation_cycles == 2
+    assert args.fail_on_stagnation is True
     assert args.run_once is True
+
+
+def test_cli_jobs_compact_mode():
+    parser = build_parser()
+    args = parser.parse_args(["jobs", "compact", "--db-path", "tmp/jobs.db"])
+    assert args.domain == "jobs"
+    assert args.jobs_command == "compact"
+    assert args.db_path == "tmp/jobs.db"
 
 
 def test_cli_degrees_description_alias_sets_same_flag():

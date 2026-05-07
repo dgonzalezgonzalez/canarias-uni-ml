@@ -3,6 +3,7 @@ import os
 import pytest
 
 from src.canarias_uni_ml.jobs.daemon import DaemonLock, run_jobs_daemon
+from src.canarias_uni_ml.jobs.pipeline import PipelineOutcome
 
 
 def test_daemon_lock_blocks_when_process_alive(tmp_path):
@@ -28,9 +29,18 @@ def test_run_jobs_daemon_run_once_executes_single_cycle(tmp_path, monkeypatch):
 
     def fake_run_jobs_pipeline(**kwargs):
         calls.append(kwargs)
-        return 0
+        return PipelineOutcome(
+            exit_code=0,
+            scraped=1,
+            inserted=1,
+            updated=0,
+            unchanged=0,
+            failures=[],
+            elapsed_seconds=0.1,
+            strategy="scrape",
+        )
 
-    monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_pipeline", fake_run_jobs_pipeline)
+    monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_pipeline_with_outcome", fake_run_jobs_pipeline)
 
     code = run_jobs_daemon(
         limit_per_source=5,
@@ -44,3 +54,68 @@ def test_run_jobs_daemon_run_once_executes_single_cycle(tmp_path, monkeypatch):
     )
     assert code == 0
     assert len(calls) == 1
+
+
+def test_run_jobs_daemon_exits_on_stagnation_threshold(tmp_path, monkeypatch):
+    def fake_run_jobs_pipeline(**kwargs):
+        return PipelineOutcome(
+            exit_code=0,
+            scraped=10,
+            inserted=0,
+            updated=0,
+            unchanged=10,
+            failures=[],
+            elapsed_seconds=0.1,
+            strategy="scrape",
+        )
+
+    monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_pipeline_with_outcome", fake_run_jobs_pipeline)
+
+    code = run_jobs_daemon(
+        limit_per_source=5,
+        output_path=str(tmp_path / "jobs.csv"),
+        db_path=str(tmp_path / "jobs.db"),
+        window_start="00:00",
+        window_end="23:59",
+        timezone_name="Europe/Madrid",
+        cooldown_minutes=0,
+        lock_path=str(tmp_path / "daemon.lock"),
+        stagnation_cycles=1,
+        fail_on_stagnation=True,
+    )
+    assert code == 3
+
+
+def test_run_jobs_daemon_scale_strategy_uses_scale_runner(tmp_path, monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_run_jobs_scale(**kwargs):
+        calls.append(kwargs)
+        return PipelineOutcome(
+            exit_code=0,
+            scraped=50,
+            inserted=10,
+            updated=1,
+            unchanged=39,
+            failures=[],
+            elapsed_seconds=0.5,
+            strategy="scale",
+        )
+
+    monkeypatch.setattr("src.canarias_uni_ml.jobs.daemon.run_jobs_scale_with_outcome", fake_run_jobs_scale)
+
+    code = run_jobs_daemon(
+        limit_per_source=5,
+        output_path=str(tmp_path / "jobs.csv"),
+        db_path=str(tmp_path / "jobs.db"),
+        window_start="00:00",
+        window_end="23:59",
+        timezone_name="Europe/Madrid",
+        run_once=True,
+        lock_path=str(tmp_path / "daemon.lock"),
+        strategy="scale",
+        time_limit_minutes=12,
+    )
+    assert code == 0
+    assert len(calls) == 1
+    assert calls[0]["time_limit_minutes"] == 12

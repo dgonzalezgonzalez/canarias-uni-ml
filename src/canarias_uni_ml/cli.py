@@ -10,6 +10,7 @@ from .degrees.catalog import write_degree_catalog
 from .embeddings.pipeline import run_embedding_pipeline
 from .jobs.daemon import run_jobs_daemon
 from .jobs.pipeline import run_jobs_pipeline, run_jobs_scale
+from .jobs.storage import JobsRepository
 from .pipeline.master import run_master_pipeline
 
 load_dotenv()
@@ -48,6 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_daemon.add_argument("--cooldown-minutes", type=int, default=10)
     jobs_daemon.add_argument("--idle-poll-seconds", type=int, default=30)
     jobs_daemon.add_argument("--run-once", action="store_true")
+    jobs_daemon.add_argument("--strategy", choices=["scrape", "scale"], default="scrape")
+    jobs_daemon.add_argument("--time-limit-minutes", type=int, default=45)
+    jobs_daemon.add_argument("--stagnation-cycles", type=int, default=0)
+    jobs_daemon.add_argument("--fail-on-stagnation", action="store_true")
+
+    jobs_compact = jobs_sub.add_parser("compact", help="Compact existing jobs DB to latest logical rows")
+    jobs_compact.add_argument("--db-path")
 
     degrees = subparsers.add_parser("degrees", help="Degree catalog workflows")
     degrees_sub = degrees.add_subparsers(dest="degrees_command", required=True)
@@ -153,7 +161,23 @@ def main(argv: list[str] | None = None) -> int:
                 idle_poll_seconds=args.idle_poll_seconds,
                 run_once=args.run_once,
                 lock_path=args.lock_path or str(settings.jobs_daemon_lock),
+                strategy=args.strategy,
+                time_limit_minutes=args.time_limit_minutes,
+                stagnation_cycles=args.stagnation_cycles,
+                fail_on_stagnation=args.fail_on_stagnation,
             )
+        if args.jobs_command == "compact":
+            repo = JobsRepository(args.db_path or str(settings.jobs_db_output))
+            stats = repo.compact_latest_records()
+            print(
+                "[done] compacted jobs db before={before} after={after} removed={removed} ambiguous_ties={ties}".format(
+                    before=stats.before,
+                    after=stats.after,
+                    removed=stats.removed,
+                    ties=stats.ambiguous_ties,
+                )
+            )
+            return 0
 
     if args.domain == "degrees" and args.degrees_command == "catalog":
         cycles = tuple(x.strip().lower() for x in args.cycles.split(",") if x.strip())

@@ -9,6 +9,7 @@ from .models import JobRecord
 from .spiders.base import SpiderError, SpiderResult
 from .spiders.jobspy_spider import JobspySpider
 from .spiders.sce import SCESpider
+from .storage import JobsRepository
 from .spiders.turijobs import TurijobsSpider
 from .utils import clean_text, infer_province_from_island, parse_date, write_csv
 
@@ -248,13 +249,15 @@ def _clean_and_dedupe(records: list[JobRecord], max_total: int) -> list[JobRecor
 
 def run_scaled(
     output_path: str,
+    db_path: str | None = None,
     time_limit_minutes: int = 45,
     max_total: int = DEFAULT_MAX_TOTAL,
     indeed_share: float = DEFAULT_INDEED_SHARE,
     sce_share: float = DEFAULT_SCE_SHARE,
     turijobs_share: float = DEFAULT_TURIJOBS_SHARE,
     sce_only: bool = False,
-) -> int:
+    return_stats: bool = False,
+) -> int | dict[str, object]:
     time_limit_seconds = time_limit_minutes * 60
     all_records: list[JobRecord] = []
     failures: list[str] = []
@@ -323,7 +326,16 @@ def run_scaled(
     total_elapsed = time.time() - start_total
     cleaned_records = _clean_and_dedupe(all_records, max_total=max_total)
     mapped_records = annotate_job_degree_targets(cleaned_records)
-    written = write_csv(mapped_records, output_path)
+    inserted = 0
+    updated = 0
+    unchanged = 0
+    if db_path:
+        repo = JobsRepository(db_path)
+        upsert = repo.upsert_records(mapped_records)
+        inserted, updated, unchanged = upsert.inserted, upsert.updated, upsert.unchanged
+        written = repo.export_csv(output_path)
+    else:
+        written = write_csv(mapped_records, output_path)
 
     source_counts: dict[str, int] = {}
     for record in mapped_records:
@@ -342,4 +354,14 @@ def run_scaled(
         for failure in failures:
             print(f" - {failure}")
 
+    if return_stats:
+        return {
+            "scraped": len(all_records),
+            "written": written,
+            "inserted": inserted,
+            "updated": updated,
+            "unchanged": unchanged,
+            "failures": failures,
+            "elapsed_seconds": total_elapsed,
+        }
     return 0
