@@ -62,6 +62,7 @@ Legacy job-only commands still route through compatibility wrapper in `src.canar
 - `data/processed/degrees_catalog.csv`
 - `data/processed/embeddings_manifest.json`
 - `data/processed/program_job_alignment.db`
+- `data/processed/program_job_similarity.csv`
 
 ## Project Layout
 
@@ -103,11 +104,6 @@ Production deployment guide: `docs/operations/remote-nightly-deploy.md`
 
 Run in this exact order on the remote host:
 
-0. Pull latest code first (required for secondary merge dedupe rule)
-```bash
-git pull
-```
-
 1. Backup current DB
 ```bash
 cp data/processed/canarias_jobs.db data/processed/canarias_jobs.$(date +%F).bak.db
@@ -142,6 +138,9 @@ sudo journalctl -u canarias-jobs-daemon.service -f
 ## Alignment Notes
 
 - Similarity is computed only on sensible candidate pairs from rule-based mapping fields.
+- One job can pair with multiple degree titles/branches, generating one similarity row per `(job_key, degree_key)`.
 - Embeddings are cached by normalized text hash + provider + model to skip rerun cost.
+- `program_job_alignment.db` is the operational datastore (includes `embedding_cache` + `program_job_similarity`).
+- `program_job_similarity.csv` is the exported snapshot of similarity rows for inspection/sharing.
 - Local testing path should prefer Ollama; OpenAI path is ready for scaled runs.
 - See `docs/alignment-pipeline.md` for details.

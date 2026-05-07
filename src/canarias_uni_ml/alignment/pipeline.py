@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
 from ..config import Settings
 from ..embeddings.pipeline import embed_with_cache, text_hash
@@ -66,6 +67,8 @@ def run_alignment_pipeline(
             SimilarityRecord(
                 job_key=pair.job_key,
                 degree_key=pair.degree_key,
+                job_title=pair.job_title,
+                degree_title=pair.degree_title,
                 score=cosine_similarity(left, right),
                 provider=provider_name,
                 model=active_model,
@@ -75,12 +78,22 @@ def run_alignment_pipeline(
         )
 
     stats = repo.upsert_similarity(rows)
+    keep_keys = {f"{row.job_key}::{row.degree_key}::{row.provider}::{row.model}" for row in rows}
+    removed = repo.delete_missing_similarity_pairs(
+        provider=provider_name,
+        model=active_model,
+        keep_pair_keys=keep_keys,
+    )
+    csv_output = Path(db_path).with_name("program_job_similarity.csv")
+    exported = repo.export_similarity_csv(csv_output)
     print(
-        "[done] alignment pairs={pairs} stored={stored} inserted={inserted} updated={updated}".format(
+        "[done] alignment pairs={pairs} stored={stored} inserted={inserted} updated={updated} removed_stale={removed} csv_rows={csv_rows}".format(
             pairs=len(pairs),
             stored=len(rows),
             inserted=stats.inserted,
             updated=stats.updated,
+            removed=removed,
+            csv_rows=exported,
         )
     )
     return 0

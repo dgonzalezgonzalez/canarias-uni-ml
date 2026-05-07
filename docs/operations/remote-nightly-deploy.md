@@ -4,11 +4,6 @@
 
 Run in this exact order on the remote host:
 
-0. Pull latest code first (required for secondary merge dedupe rule)
-```bash
-git pull
-```
-
 1. Backup current DB
 ```bash
 cp data/processed/canarias_jobs.db data/processed/canarias_jobs.$(date +%F).bak.db

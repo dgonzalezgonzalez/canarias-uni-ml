@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -49,6 +50,8 @@ class AlignmentRepository:
                     pair_key TEXT PRIMARY KEY,
                     job_key TEXT NOT NULL,
                     degree_key TEXT NOT NULL,
+                    job_title TEXT NOT NULL DEFAULT '',
+                    degree_title TEXT NOT NULL DEFAULT '',
                     score REAL NOT NULL,
                     provider TEXT NOT NULL,
                     model TEXT NOT NULL,
@@ -59,6 +62,11 @@ class AlignmentRepository:
                 )
                 """
             )
+            cols = [row["name"] for row in conn.execute("PRAGMA table_info(program_job_similarity)").fetchall()]
+            if "job_title" not in cols:
+                conn.execute("ALTER TABLE program_job_similarity ADD COLUMN job_title TEXT NOT NULL DEFAULT ''")
+            if "degree_title" not in cols:
+                conn.execute("ALTER TABLE program_job_similarity ADD COLUMN degree_title TEXT NOT NULL DEFAULT ''")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_similarity_job ON program_job_similarity(job_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_similarity_degree ON program_job_similarity(degree_key)")
             conn.commit()
@@ -123,14 +131,16 @@ class AlignmentRepository:
                     conn.execute(
                         """
                         INSERT INTO program_job_similarity(
-                            pair_key, job_key, degree_key, score, provider, model,
+                            pair_key, job_key, degree_key, job_title, degree_title, score, provider, model,
                             job_text_hash, degree_text_hash, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             pair_key,
                             row.job_key,
                             row.degree_key,
+                            row.job_title,
+                            row.degree_title,
                             row.score,
                             row.provider,
                             row.model,
@@ -145,11 +155,77 @@ class AlignmentRepository:
                     conn.execute(
                         """
                         UPDATE program_job_similarity
-                        SET score = ?, job_text_hash = ?, degree_text_hash = ?, updated_at = ?
+                        SET job_title = ?, degree_title = ?, score = ?, job_text_hash = ?, degree_text_hash = ?, updated_at = ?
                         WHERE pair_key = ?
                         """,
-                        (row.score, row.job_text_hash, row.degree_text_hash, now, pair_key),
+                        (
+                            row.job_title,
+                            row.degree_title,
+                            row.score,
+                            row.job_text_hash,
+                            row.degree_text_hash,
+                            now,
+                            pair_key,
+                        ),
                     )
                     stats.updated += 1
             conn.commit()
         return stats
+
+    def delete_missing_similarity_pairs(
+        self,
+        *,
+        provider: str,
+        model: str,
+        keep_pair_keys: set[str],
+    ) -> int:
+        with self._connect() as conn:
+            existing = conn.execute(
+                """
+                SELECT pair_key
+                FROM program_job_similarity
+                WHERE provider = ? AND model = ?
+                """,
+                (provider, model),
+            ).fetchall()
+            to_delete = [row["pair_key"] for row in existing if row["pair_key"] not in keep_pair_keys]
+            if to_delete:
+                conn.executemany(
+                    "DELETE FROM program_job_similarity WHERE pair_key = ?",
+                    [(key,) for key in to_delete],
+                )
+            conn.commit()
+        return len(to_delete)
+
+    def export_similarity_csv(self, output_path: str | Path) -> int:
+        target = Path(output_path)
+        ensure_parent(target)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT pair_key, job_key, degree_key, job_title, degree_title, score, provider, model,
+                       job_text_hash, degree_text_hash, created_at, updated_at
+                FROM program_job_similarity
+                ORDER BY score DESC
+                """
+            ).fetchall()
+        fieldnames = [
+            "pair_key",
+            "job_key",
+            "degree_key",
+            "job_title",
+            "degree_title",
+            "score",
+            "provider",
+            "model",
+            "job_text_hash",
+            "degree_text_hash",
+            "created_at",
+            "updated_at",
+        ]
+        with open(target, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({name: row[name] for name in fieldnames})
+        return len(rows)

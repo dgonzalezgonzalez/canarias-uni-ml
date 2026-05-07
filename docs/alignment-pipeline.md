@@ -16,6 +16,7 @@ Job rows already include deterministic mapping fields:
 - `degree_match_status`
 
 The alignment stage only compares jobs with `degree_match_status=matched` and links them to degree rows by title/branch overlap.
+One job can map to multiple degree titles/branches, producing one similarity row per unique `(job_key, degree_key)` pair.
 
 ## Embedding Providers
 
@@ -46,6 +47,9 @@ This allows reruns to skip already embedded text while keeping model/provider se
 Default database path:
 - `data/processed/program_job_alignment.db`
 
+Default CSV export path:
+- `data/processed/program_job_similarity.csv`
+
 Main tables:
 - `embedding_cache`
 - `program_job_similarity`
@@ -53,10 +57,17 @@ Main tables:
 Each similarity row stores:
 - job key
 - degree key
+- job title
+- degree/program title
 - cosine score
 - provider/model provenance
 - text hashes
 - timestamps
+
+Operational behavior on each `align run`:
+- upserts current valid similarity pairs
+- removes stale pairs for the same provider/model not present in current run
+- exports refreshed CSV snapshot from `program_job_similarity`
 
 ## Commands
 

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 class CandidatePair:
     job_key: str
     degree_key: str
+    job_title: str
+    degree_title: str
     job_text: str
     degree_text: str
     job_text_hash: str
@@ -63,6 +65,8 @@ def build_candidate_pairs(jobs: list[dict], degrees: list[dict], *, min_text_len
                 CandidatePair(
                     job_key=job_key,
                     degree_key=degree_key,
+                    job_title=(job.get("title") or "").strip(),
+                    degree_title=(degree.get("title") or "").strip(),
                     job_text=job_text,
                     degree_text=degree_text,
                     job_text_hash="",

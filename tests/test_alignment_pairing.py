@@ -32,6 +32,8 @@ def test_pairing_uses_target_titles_and_branches():
     pairs = build_candidate_pairs(jobs, degrees, min_text_len=10)
     assert len(pairs) == 1
     assert "informatica" in pairs[0].degree_text.lower()
+    assert pairs[0].job_title == "Desarrollador"
+    assert pairs[0].degree_title == "Grado en Ingenieria Informatica"
 
 
 def test_pairing_skips_unmatched_jobs():

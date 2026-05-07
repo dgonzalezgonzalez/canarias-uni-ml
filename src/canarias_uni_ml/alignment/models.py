@@ -16,6 +16,8 @@ class EmbeddingCacheRecord:
 class SimilarityRecord:
     job_key: str
     degree_key: str
+    job_title: str
+    degree_title: str
     score: float
     provider: str
     model: str
